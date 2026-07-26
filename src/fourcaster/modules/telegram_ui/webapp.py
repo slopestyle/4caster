@@ -101,6 +101,19 @@ async def api_forecast(location: str) -> dict:
     }
 
 
+@app.get("/api/models")
+async def api_models() -> dict:
+    """Состав консенсуса и стартовые веса (§8.2) — для плашки «N моделей»."""
+    from fourcaster.modules.consensus.models import MODELS
+
+    return {
+        "models": [
+            {"id": m.id, "name": m.name, "center": m.center, "weight": m.weight}
+            for m in MODELS
+        ]
+    }
+
+
 @app.get("/api/hourly")
 async def api_hourly(location: str) -> dict:
     from fourcaster.modules.consensus.calculator import compute_hourly

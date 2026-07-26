@@ -189,13 +189,20 @@ HTML = r'''<!doctype html>
 
   /* history heatmap */
   .hm{background:var(--surface);border:1px solid var(--hair);border-radius:16px;padding:12px}
-  .hmrow{display:grid;grid-template-columns:38px 1fr;gap:6px;align-items:center;margin-bottom:2px}
-  .hm .yl{font-size:9.5px;color:var(--ink3);font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
+  .hmrow{display:grid;grid-template-columns:54px 1fr;gap:6px;align-items:center;margin-bottom:2px}
+  .hm .yl{font-size:9.5px;color:var(--ink3);font-weight:600;text-align:right;white-space:nowrap}
+  .hm .yl b{color:var(--ink2);font-weight:700}
   .hm .cells{display:grid;gap:2px}
   /* фиксированная высота, а не квадрат: при 3–6 столбцах aspect-ratio:1 раздувал
      ячейки до ~70 px и виджет переставал влезать в экран */
   .hm .cells i{height:12px;border-radius:3px}
-  .hm-x{font-size:9px;color:var(--ink3);display:flex;justify-content:space-between;margin:6px 0 0 44px}
+  /* подписи столбцов — вертикально: горизонтально таймстемп не влезает в колонку
+     шириной ~15–40 px, а подписать нужно каждый выпуск */
+  .hm-hd{align-items:end}
+  .hm-hd span{writing-mode:vertical-rl;transform:rotate(180deg);font-size:8px;line-height:1;
+    color:var(--ink3);white-space:nowrap;font-variant-numeric:tabular-nums;
+    justify-self:center;padding-bottom:3px}
+  .hm-hd span.last{color:var(--brand);font-weight:700}
   .scale{display:flex;align-items:center;gap:7px;font-size:9.5px;color:var(--ink2);margin-top:10px}
   .scale .grad{flex:1;height:7px;border-radius:4px;
     background:linear-gradient(90deg,var(--g),var(--a),var(--o),var(--r))}
@@ -574,7 +581,7 @@ function hourlyChart(h){
       xl+=`<text x="${sx(i)}" y="${H-14}" font-size="8" fill="var(--ink3)" text-anchor="middle">${String(t.getHours()).padStart(2,'0')}</text>`;
       const prev=i?tsLocal(h.times[i-6]):null;
       if(!prev||prev.getDate()!==t.getDate())
-        dl+=`<text x="${Math.min(W-14,Math.max(14,sx(i)))}" y="${H-4}" font-size="7.5" fill="var(--ink3)" text-anchor="middle">${dmt(t)}</text>`;
+        dl+=`<text x="${Math.min(W-18,Math.max(18,sx(i)))}" y="${H-4}" font-size="7.5" fill="var(--ink3)" text-anchor="middle">${WD[t.getDay()]} ${dmt(t)}</text>`;
     }
     // отсчёт идёт от текущего часа: помечаем начало оси, чтобы «48 ч» читались буквально
     const t0=tsLocal(h.times[0]), t1=tsLocal(h.times[n-1]);
@@ -593,7 +600,7 @@ function hourlyChart(h){
     const summary = dryHrs>0
       ? `Сухое окно: ближайшие <b>${dryHrs} ч</b>.`
       : `Осадки уже идут.`;
-    const range=`<div class="tiny" style="margin:-2px 2px 8px">от <b>${dmt(t0)} ${hhmm(t0)}</b> до <b>${dmt(t1)} ${hhmm(t1)}</b> · ${n} ч · местное время</div>`;
+    const range=`<div class="tiny" style="margin:-2px 2px 8px">от <b>${WD[t0.getDay()]} ${dmt(t0)} ${hhmm(t0)}</b> до <b>${WD[t1.getDay()]} ${dmt(t1)} ${hhmm(t1)}</b> · ${n} ч · местное время</div>`;
     return `${range}${svg}
       <div class="note" style="margin-top:10px">${summary} Пунктир — вероятность осадков, полоса — разброс от лучшего к худшему случаю по моделям (p10–p90).</div>`;
 }
@@ -622,14 +629,22 @@ function historyHeatmap(h){
     // эволюцию прогноза именно для этой даты, и один ливневый день не «засвечивает»
     // остальные. FLOOR — дно шкалы, чтобы сухие строки не краснели от миллиметрового шума.
     const FLOOR=6;
+    // подпись выпуска: «Вс 26.07 14:00» (issued_at приходит со смещением UTC,
+    // поэтому new Date переводит его в часовой пояс пользователя)
+    const fmtIssue=iso=>{const d=new Date(iso);
+      return WD[d.getDay()]+' '+String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0')
+        +' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')};
+    const stamps=h.issues.map(fmtIssue);
+    const head=`<div class="hmrow"><span class="yl"></span>
+      <div class="cells hm-hd" style="${gtc}">${stamps.map((s,i)=>
+        `<span class="${i===n-1?'last':''}" title="${s}">${s}</span>`).join('')}</div></div>`;
     const body=h.rows.map(r=>{
       const rmax=Math.max(FLOOR,...r.vals.filter(v=>v!=null));
-      const cells=r.vals.map(v=>`<i style="background:${heatColor(v,rmax)}" title="${v==null?'—':Math.round(v*10)/10+' мм'}"></i>`).join('');
-      return `<div class="hmrow"><span class="yl">${dm(r.date)}</span><div class="cells" style="${gtc}">${cells}</div></div>`;
+      const cells=r.vals.map((v,i)=>`<i style="background:${heatColor(v,rmax)}" title="${stamps[i]} → ${v==null?'нет данных':Math.round(v*10)/10+' мм'}"></i>`).join('');
+      return `<div class="hmrow"><span class="yl"><b>${wd(r.date)}</b> ${dm(r.date)}</span><div class="cells" style="${gtc}">${cells}</div></div>`;
     }).join('');
-    const fmtIssue=iso=>{const d=new Date(iso);return String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')};
-    return `<div class="muted" style="font-size:11px;margin:0 2px 10px">Строки — прогнозируемая дата, столбцы — момент выпуска прогноза (${n}). Цвет — осадки p50 относительно этого же дня: у каждой строки своя шкала, чтобы видеть, как менялся прогноз именно на эту дату.</div>
-      <div class="hm">${body}<div class="hm-x"><span>${fmtIssue(h.issues[0])}</span><span>${n>1?fmtIssue(h.issues[n-1]):''} →</span></div>
+    return `<div class="muted" style="font-size:11px;margin:0 2px 10px">Строки — прогнозируемая дата, столбцы — момент выпуска прогноза (${n}, последний выделен). Цвет — осадки p50 относительно этого же дня: у каждой строки своя шкала, чтобы видеть, как менялся прогноз именно на эту дату.</div>
+      <div class="hm">${head}${body}
         <div class="scale"><span>меньше</span><div class="grad"></div><span>больше</span></div></div>
       <div class="note" style="margin-top:10px">Стабильные столбцы справа — прогноз «устаканился». Скачки — модели меняли мнение. Накапливается автоматически каждые 4 часа.</div>`;
 }
