@@ -37,7 +37,7 @@ def start_reply() -> BotReply:
         "🏔 <b>4CASTER</b> — не прогноз погоды, а помощь в решении: идти в горы или нет.\n\n"
         "Показываю консенсус нескольких метеомоделей и честно — насколько ему можно верить.\n\n"
         f"Доступные точки: {names}\n\n"
-        "Выберите локацию или отправьте /forecast."
+        "Откройте приложение — все локации, прогнозы и надёжность внутри."
     )
     return BotReply(text, start_keyboard())
 
@@ -66,7 +66,7 @@ HELP_TEXT = (
 
 
 def help_reply() -> BotReply:
-    return BotReply(HELP_TEXT, locations_keyboard())
+    return BotReply(HELP_TEXT, start_keyboard())
 
 
 def forecast_reply(

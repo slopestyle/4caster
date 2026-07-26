@@ -42,9 +42,9 @@ def forecast_keyboard(location_id: str, subscribed: bool) -> InlineKeyboardMarku
 
 
 def start_keyboard() -> InlineKeyboardMarkup:
-    """Стартовая клавиатура: кнопка Mini App + локации + легенда."""
-    rows = [[InlineKeyboardButton(
-        text="🗺️ Открыть приложение", web_app=WebAppInfo(url=MINIAPP_URL))]]
-    rows += _location_rows()
-    rows.append([InlineKeyboardButton(text="❓ Что значат числа?", callback_data=HELP_CB)])
-    return InlineKeyboardMarkup(inline_keyboard=rows)
+    """Стартовая клавиатура: только общая информация + кнопка приложения."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="🗺️ Открыть приложение", web_app=WebAppInfo(url=MINIAPP_URL))],
+        [InlineKeyboardButton(text="❓ Что значат числа?", callback_data=HELP_CB)],
+    ])
