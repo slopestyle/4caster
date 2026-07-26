@@ -14,7 +14,7 @@ from aiogram.types import CallbackQuery, Message
 from sqlalchemy.engine import Engine
 
 from fourcaster.modules.telegram_ui import service
-from fourcaster.modules.telegram_ui.keyboards import FORECAST_CB_PREFIX
+from fourcaster.modules.telegram_ui.keyboards import FORECAST_CB_PREFIX, HELP_CB
 
 router = Router()
 
@@ -23,6 +23,20 @@ router = Router()
 async def on_start(message: Message) -> None:
     r = service.start_reply()
     await message.answer(r.text, reply_markup=r.keyboard)
+
+
+@router.message(Command("help"))
+async def on_help(message: Message) -> None:
+    r = service.help_reply()
+    await message.answer(r.text, reply_markup=r.keyboard)
+
+
+@router.callback_query(F.data == HELP_CB)
+async def on_help_button(callback: CallbackQuery) -> None:
+    r = service.help_reply()
+    if isinstance(callback.message, Message):
+        await callback.message.answer(r.text, reply_markup=r.keyboard)
+    await callback.answer()
 
 
 @router.message(Command("locations"))

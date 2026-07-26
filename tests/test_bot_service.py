@@ -6,18 +6,28 @@ from fourcaster.modules.locations import CATALOG
 from fourcaster.modules.telegram_ui import service
 from fourcaster.modules.telegram_ui.keyboards import (
     FORECAST_CB_PREFIX,
+    HELP_CB,
     locations_keyboard,
 )
 
 
-def test_keyboard_has_button_per_location():
+def test_keyboard_has_button_per_location_and_help():
     kb = locations_keyboard()
     buttons = [b for row in kb.inline_keyboard for b in row]
-    assert len(buttons) == len(CATALOG)
-    for b in buttons:
-        assert b.callback_data.startswith(FORECAST_CB_PREFIX)
+    fc_buttons = [b for b in buttons if b.callback_data.startswith(FORECAST_CB_PREFIX)]
+    assert len(fc_buttons) == len(CATALOG)
+    for b in fc_buttons:
         loc_id = b.callback_data[len(FORECAST_CB_PREFIX):]
         assert loc_id in CATALOG
+    # кнопка легенды присутствует
+    assert any(b.callback_data == HELP_CB for b in buttons)
+
+
+def test_help_reply_explains_parameters():
+    r = service.help_reply()
+    assert r.keyboard is not None
+    for token in ("Consensus", "HIL", "мм", "Надёжность"):
+        assert token in r.text
 
 
 def test_start_reply_mentions_locations_and_has_keyboard():
