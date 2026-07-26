@@ -93,7 +93,11 @@ HTML = r'''<!doctype html>
   .sw{width:10px;height:10px;border-radius:3px;display:inline-block}
 
   .days{background:var(--surface);border:1px solid var(--hair);border-radius:16px;padding:4px 12px;margin-bottom:10px}
-  .day{display:grid;grid-template-columns:56px 24px 1fr 40px;gap:10px;align-items:center;
+  .dayleg{font-size:10.5px;color:var(--ink3);display:flex;gap:14px;flex-wrap:wrap;
+    padding:9px 2px 7px;border-bottom:1px solid var(--hair);line-height:1.4}
+  .dayleg span{display:inline-flex;gap:5px;align-items:center}
+  .dayleg b{color:var(--ink2);font-weight:700}
+  .day{display:grid;grid-template-columns:52px 22px 1fr 46px;gap:10px;align-items:center;
     padding:11px 2px;border-bottom:1px solid var(--hair)}
   .day:last-child{border-bottom:0}
   .dt{font-size:12.5px;font-weight:600} .dt small{display:block;color:var(--ink3);font-size:10.5px}
@@ -104,9 +108,15 @@ HTML = r'''<!doctype html>
     background:linear-gradient(90deg,color-mix(in srgb,var(--precip) 25%,transparent),var(--precip))}
   .p50{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--ink);border-radius:2px;
     box-shadow:0 0 0 2px var(--surface)}
-  .pop{font-size:12px;color:var(--ink2);font-weight:600;font-variant-numeric:tabular-nums;
-    display:flex;flex-direction:column;align-items:flex-end;gap:3px}
+  /* надёжность у полосы разброса — что она и оценивает */
+  .rel-inline{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600}
+  .rel-inline .dd{width:9px;height:9px}
+  .pop{font-size:14px;color:var(--ink);font-weight:700;font-variant-numeric:tabular-nums;
+    display:flex;flex-direction:column;align-items:flex-end;gap:1px;line-height:1.1}
+  .pop .lbl{font-size:8.5px;color:var(--ink3);font-weight:600}
   .dd{width:8px;height:8px;border-radius:50%}
+  /* заголовок инлайн-секции (почасовой / история) */
+  .sec-h{margin:16px 2px 8px;font-size:14px;font-weight:700;display:flex;align-items:center;gap:7px}
   /* multi-day strip on location cards */
   .strip{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:11px}
   .dcell{text-align:center;padding:5px 0 4px;border-radius:9px;background:var(--surface2)}
@@ -145,10 +155,6 @@ HTML = r'''<!doctype html>
   .cmp .v small{color:var(--ink3);font-weight:500}
 
   /* history heatmap */
-  .hbtn{width:100%;background:var(--surface);border:1px solid var(--hair);border-radius:14px;
-    padding:12px 14px;color:var(--ink);font:inherit;font-size:13px;font-weight:600;text-align:left;
-    cursor:pointer;display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
-  .hbtn:active{background:var(--surface2)}
   .hm{background:var(--surface);border:1px solid var(--hair);border-radius:16px;padding:14px}
   .hmrow{display:grid;grid-template-columns:38px 1fr;gap:6px;align-items:center;margin-bottom:3px}
   .hm .yl{font-size:9.5px;color:var(--ink3);font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
@@ -198,7 +204,12 @@ applyTheme();
 const HIL_IC=['☁️','🌦','🌧','🌧','🌧','⛈'];
 const WD=['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
 const MAX=60;
-const CB=['bg-g','bg-a','bg-o','bg-r'], CW=['надёжнее','осторожно','низкая','не опираться'];
+const CB=['bg-g','bg-a','bg-o','bg-r'], CW=['надёжно','осторожно','низкая','не опираться'];
+const GC=['g','a','o','r'];
+function modelsWord(n){const a=n%10,b=n%100;
+  if(a===1&&b!==11)return'модель'; if(a>=2&&a<=4&&(b<10||b>=20))return'модели'; return'моделей';}
+const H_HOURLY='<h4 class="sec-h">🕐 Почасовой прогноз · 48 ч</h4>';
+const H_HIST='<h4 class="sec-h">📅 Как менялся прогноз</h4>';
 function wd(iso){return WD[new Date(iso+'T00:00:00').getDay()]}
 function dm(iso){const d=new Date(iso+'T00:00:00');return String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0')}
 function g(v){return Math.round(v*10)/10}
@@ -243,7 +254,7 @@ async function loadHome(){
   view.innerHTML='<div class="skel"></div><div class="skel"></div>';
   try{
     const d=await api('/api/locations'); CACHE.locs=d.locations;
-    const hint=`<div class="hint"><span><i class="dd bg-g"></i>надёжнее</span>
+    const hint=`<div class="hint"><span><i class="dd bg-g"></i>надёжно</span>
       <span><i class="dd bg-a"></i>осторожно</span><span><i class="dd bg-o"></i>низкая</span>
       <span>рамка — сухой день</span></div>`;
     view.innerHTML=hint+d.locations.map(l=>{
@@ -283,18 +294,23 @@ function weeklyChart(days){
 }
 
 function relBlock(d){
-  const n=d.n_models, idx=[[0,'1 день'],[2,'3 дня'],[6,'7 дней']];
+  const idx=[[0,'1 день'],[2,'3 дня'],[6,'7 дней']];
   const chips=idx.filter(x=>d.days[x[0]]).map(([i,lab])=>{
-    const lvl=confLevel(d.days[i],n);
+    const dd=d.days[i], lvl=confLevel(dd,dd.n_models);
     return `<div class="relchip"><div class="h">${lab.toUpperCase()}</div>
-      <div class="dot ${CB[lvl]}"></div><div class="w ${['g','a','o','r'][lvl]}">${CW[lvl]}</div></div>`;
+      <div class="dot ${CB[lvl]}"></div><div class="w ${GC[lvl]}">${CW[lvl]}</div></div>`;
   }).join('');
+  const n=d.days[0]?d.days[0].n_models:d.n_models;
+  const far=d.days[6]||d.days[d.days.length-1];
+  const nf=far?far.n_models:n;
+  const cover=nf<n ? `Моделей в расчёте: <b>${n}/5</b> (к концу горизонта <b>${nf}/5</b>)`
+                   : `Моделей в расчёте: <b>${n}/5</b>`;
   const d3=d.days[2]||d.days[d.days.length-1];
   const spread=d3?(d3.p90-d3.p10):0;
   const sw=spread<3?'узкий':spread<12?'умеренный':'широкий';
   return `<div class="rel"><h4>📊 Надёжность <span class="tiny" style="font-weight:400">— предварительно</span></h4>
     <div class="relrow">${chips}</div>
-    <div class="relmeta">Согласие моделей: <b>${n}/5</b> · разброс на 3-й день: <b>${sw}</b> (${g(spread)} мм).
+    <div class="relmeta">${cover} · согласованность на 3-й день: <b>${sw}</b> разброс (${g(spread)} мм).
     Чем шире полоса p10–p90 — тем ниже надёжность.</div>
     <div class="note">Оценка по разбросу моделей. <b>Калиброванный скор</b> (совпадение с фактом
     на истории) — Фаза 2.</div></div>`;
@@ -306,32 +322,34 @@ async function loadForecast(id){
   try{
     const d=await api('/api/forecast?location='+encodeURIComponent(id));
     const upd=new Date(d.computed_at);
+    const leg=`<div class="dayleg">
+      <span><b>%</b> — вероятность осадков</span>
+      <span><i class="dd bg-a"></i> точка — надёжность прогноза (разброс моделей)</span></div>`;
     const rows=d.days.map(x=>{
       const lvl=confLevel(x, x.n_models);
       const nm = x.n_models<5 ? ` · <span class="tiny">${x.n_models}/5 моделей</span>` : '';
       return `<div class="day">
       <div class="dt">${dm(x.day)}<small>${wd(x.day)}</small></div>
       <div class="ic">${HIL_IC[x.hil_level]}</div>
-      <div class="bw"><span class="band-num"><b>${g(x.p50)}</b> <u>(${g(x.p10)}–${g(x.p90)})</u> мм · ${x.hil_label}${nm}</span>${band(x)}</div>
-      <div class="pop">${Math.round(x.pop*100)}%<div class="dd ${CB[lvl]}"></div></div></div>`;
+      <div class="bw"><span class="band-num"><b>${g(x.p50)}</b> <u>(${g(x.p10)}–${g(x.p90)})</u> мм · ${x.hil_label}${nm}</span>
+        ${band(x)}
+        <span class="rel-inline"><i class="dd ${CB[lvl]}"></i><span class="${GC[lvl]}">${CW[lvl]}</span></span></div>
+      <div class="pop">${Math.round(x.pop*100)}%<span class="lbl">вер-ть</span></div></div>`;
     }).join('');
     view.innerHTML=`<button class="back" onclick="loadHome()">‹ Все точки</button>
       <div class="dhead"><div class="loc">${d.location.name}</div><div class="tiny">${d.location.elevation_m} м</div></div>
-      <div class="row" style="margin:0 2px 10px"><span class="pill ok">Consensus ${d.n_models}/5</span>
+      <div class="row" style="margin:0 2px 10px"><span class="pill ok">🛰 ${d.n_models} ${modelsWord(d.n_models)}</span>
         <span class="tiny">обновлено ${String(upd.getHours()).padStart(2,'0')}:${String(upd.getMinutes()).padStart(2,'0')}</span></div>
-      ${weeklyChart(d.days)}${relBlock(d)}<div class="days">${rows}</div>
-      <button class="hbtn" onclick="loadHourly('${d.location.id}')"><span>🕐 Почасовой прогноз · 48 ч</span><span class="tiny">→</span></button>
-      <button class="hbtn" onclick="loadHistory('${d.location.id}')"><span>📅 Как менялся прогноз</span><span class="tiny">→</span></button>`;
+      ${weeklyChart(d.days)}${relBlock(d)}<div class="days">${leg}${rows}</div>
+      <section id="secHourly">${H_HOURLY}<div class="skel"></div></section>
+      <section id="secHistory">${H_HIST}<div class="skel"></div></section>`;
+    hydrateHourly(id); hydrateHistory(id);
   }catch(e){view.innerHTML='<div class="state">Прогноз ещё не рассчитан.</div>'}
 }
 
-async function loadHourly(id){
-  view.innerHTML='<div class="skel"></div>';
-  if(tg&&tg.BackButton){tg.BackButton.show();tg.BackButton.onClick(()=>loadForecast(id));}
-  try{
-    const h=await api('/api/hourly?location='+encodeURIComponent(id));
+function hourlyChart(h){
     const n=h.times.length;
-    if(!n){view.innerHTML=`<button class="back" onclick="loadForecast('${id}')">‹ Назад</button><div class="state">Нет часовых данных.</div>`;return}
+    if(!n) return `<div class="note">Нет часовых данных на ближайшие 48 ч.</div>`;
     const W=320,H=170,padL=6,padR=6,base=H-24,top=14;
     const mx=Math.max(2,...h.p90);
     const sx=i=>padL+i/(n-1)*(W-padL-padR);
@@ -370,11 +388,15 @@ async function loadHourly(id){
     const summary = dryHrs>0
       ? `Сухое окно: ближайшие <b>${dryHrs} ч</b>.`
       : `Осадки уже идут.`;
-    view.innerHTML=`<button class="back" onclick="loadForecast('${id}')">‹ ${h.location.name}</button>
-      <div class="dhead"><div class="loc">Почасовой · 48 ч</div></div>
-      ${svg}
+    return `${svg}
       <div class="note" style="margin-top:10px">${summary} Пунктир — вероятность осадков, полоса — разброс p10–p90 по моделям.</div>`;
-  }catch(e){view.innerHTML=`<button class="back" onclick="loadForecast('${id}')">‹ Назад</button><div class="state">Не удалось загрузить почасовой прогноз.</div>`}
+}
+async function hydrateHourly(id){
+  const box=document.getElementById('secHourly'); if(!box) return;
+  try{
+    const h=await api('/api/hourly?location='+encodeURIComponent(id));
+    box.innerHTML=H_HOURLY+hourlyChart(h);
+  }catch(e){ box.innerHTML=H_HOURLY+`<div class="note">Не удалось загрузить почасовой прогноз.</div>`; }
 }
 
 function heatColor(v,mx){
@@ -382,27 +404,26 @@ function heatColor(v,mx){
   const pct=Math.round(Math.min(v,mx)/(mx||1)*100);
   return `color-mix(in srgb,var(--precip) ${pct}%,var(--surface3))`;
 }
-async function loadHistory(id){
-  view.innerHTML='<div class="skel"></div>';
-  if(tg&&tg.BackButton){tg.BackButton.show();tg.BackButton.onClick(()=>loadForecast(id));}
-  try{
-    const h=await api('/api/history?location='+encodeURIComponent(id));
+function historyHeatmap(h){
     const n=h.issues.length;
-    if(!n){view.innerHTML=`<button class="back" onclick="loadForecast('${id}')">‹ Назад</button>
-      <div class="state">История пуста — накопится за несколько циклов (каждые 4 ч).</div>`;return}
+    if(!n) return `<div class="note">История пуста — накопится за несколько циклов (каждые 4 ч).</div>`;
     const gtc=`grid-template-columns:repeat(${n},1fr)`;
     const body=h.rows.map(r=>{
       const cells=r.vals.map(v=>`<i style="background:${heatColor(v,h.max)}" title="${v==null?'—':Math.round(v*10)/10+' мм'}"></i>`).join('');
       return `<div class="hmrow"><span class="yl">${dm(r.date)}</span><div class="cells" style="${gtc}">${cells}</div></div>`;
     }).join('');
     const fmtIssue=iso=>{const d=new Date(iso);return String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')};
-    view.innerHTML=`<button class="back" onclick="loadForecast('${id}')">‹ ${h.location.name}</button>
-      <div class="dhead"><div class="loc">Как менялся прогноз</div></div>
-      <div class="muted" style="font-size:11px;margin:0 2px 10px">Строки — прогнозируемая дата, столбцы — момент выпуска прогноза (${n}). Цвет — осадки p50.</div>
+    return `<div class="muted" style="font-size:11px;margin:0 2px 10px">Строки — прогнозируемая дата, столбцы — момент выпуска прогноза (${n}). Цвет — осадки p50.</div>
       <div class="hm">${body}<div class="hm-x"><span>${fmtIssue(h.issues[0])}</span><span>${n>1?fmtIssue(h.issues[n-1]):''} →</span></div>
         <div class="scale"><span>сухо</span><div class="grad"></div><span>ливень</span></div></div>
       <div class="note" style="margin-top:10px">Стабильные столбцы справа — прогноз «устаканился». Скачки — модели меняли мнение. Накапливается автоматически каждые 4 часа.</div>`;
-  }catch(e){view.innerHTML=`<button class="back" onclick="loadForecast('${id}')">‹ Назад</button><div class="state">Не удалось загрузить историю.</div>`}
+}
+async function hydrateHistory(id){
+  const box=document.getElementById('secHistory'); if(!box) return;
+  try{
+    const h=await api('/api/history?location='+encodeURIComponent(id));
+    box.innerHTML=H_HIST+historyHeatmap(h);
+  }catch(e){ box.innerHTML=H_HIST+`<div class="note">Не удалось загрузить историю.</div>`; }
 }
 
 async function loadCompare(){
