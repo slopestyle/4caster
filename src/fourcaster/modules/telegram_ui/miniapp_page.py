@@ -4,9 +4,9 @@
 данные тянет с /api/locations и /api/forecast (та же read-модель, что у бота).
 Тема берётся из Telegram WebApp themeParams с запасной палитрой.
 
-Экраны: список точек, прогноз (недельный график + дни + предварительная
-надёжность по разбросу моделей), сравнение точек. Калиброванная надёжность,
-метеограмма 48ч и история — Фаза 2 (нужны часовые данные и хранение истории).
+Экраны: список точек, прогноз (метеограмма на 48 ч от текущего часа, недельный
+график, дни, предварительная надёжность по разбросу моделей, история прогноза),
+сравнение точек. Калиброванная надёжность — Фаза 2 (нужна верификация по факту).
 """
 
 HTML = r'''<!doctype html>
@@ -97,12 +97,20 @@ HTML = r'''<!doctype html>
     padding:9px 2px 7px;border-bottom:1px solid var(--hair);line-height:1.4}
   .dayleg span{display:inline-flex;gap:5px;align-items:center}
   .dayleg b{color:var(--ink2);font-weight:700}
-  .day{display:grid;grid-template-columns:52px 22px 1fr 46px;gap:10px;align-items:center;
-    padding:11px 2px;border-bottom:1px solid var(--hair)}
+  .day{display:grid;grid-template-columns:48px 22px 1fr;gap:10px;align-items:start;
+    padding:12px 2px;border-bottom:1px solid var(--hair)}
   .day:last-child{border-bottom:0}
   .dt{font-size:12.5px;font-weight:600} .dt small{display:block;color:var(--ink3);font-size:10.5px}
   .ic{font-size:18px;text-align:center}
-  .bw{display:flex;flex-direction:column;gap:4px;min-width:0}
+  .bw{display:flex;flex-direction:column;min-width:0}
+  /* строка дня: вердикт (ответ) → вероятность → объём осадков → полоса разброса */
+  .verdict{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:14px;font-weight:750}
+  .verdict .vd em{color:var(--ink3);font-style:normal;font-weight:600;font-size:11px;margin-left:3px}
+  .daypop{font-size:12px;color:var(--ink2);font-weight:600;margin-top:7px}
+  .daypop b{color:var(--ink);font-variant-numeric:tabular-nums}
+  .daymeta{font-size:11px;color:var(--ink3);margin-top:5px;line-height:1.4;font-variant-numeric:tabular-nums}
+  .daymeta b{color:var(--ink2);font-weight:700}
+  .bw .track{margin-top:8px}
   .track{position:relative;height:7px;border-radius:4px;background:var(--surface3);overflow:hidden}
   .rng{position:absolute;top:0;bottom:0;border-radius:4px;
     background:linear-gradient(90deg,color-mix(in srgb,var(--precip) 25%,transparent),var(--precip))}
@@ -137,6 +145,7 @@ HTML = r'''<!doctype html>
   .relchip .h{font-size:9.5px;color:var(--ink3);font-weight:700}
   .relchip .dot{width:11px;height:11px;border-radius:50%;margin:5px auto 3px}
   .relchip .w{font-size:9.5px;font-weight:600}
+  .relchip-n{font-size:8.5px;color:var(--ink3);font-weight:600;margin-top:3px}
   .relmeta{font-size:11.5px;color:var(--ink2);line-height:1.5}
   .relmeta b{color:var(--ink)}
   .g{color:var(--g)} .a{color:var(--a)} .o{color:var(--o)} .r{color:var(--r)}
@@ -179,11 +188,13 @@ HTML = r'''<!doctype html>
   .cmp .v small{color:var(--ink3);font-weight:500}
 
   /* history heatmap */
-  .hm{background:var(--surface);border:1px solid var(--hair);border-radius:16px;padding:14px}
-  .hmrow{display:grid;grid-template-columns:38px 1fr;gap:6px;align-items:center;margin-bottom:3px}
+  .hm{background:var(--surface);border:1px solid var(--hair);border-radius:16px;padding:12px}
+  .hmrow{display:grid;grid-template-columns:38px 1fr;gap:6px;align-items:center;margin-bottom:2px}
   .hm .yl{font-size:9.5px;color:var(--ink3);font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
-  .hm .cells{display:grid;gap:3px}
-  .hm .cells i{aspect-ratio:1;border-radius:3px;min-height:14px}
+  .hm .cells{display:grid;gap:2px}
+  /* фиксированная высота, а не квадрат: при 3–6 столбцах aspect-ratio:1 раздувал
+     ячейки до ~70 px и виджет переставал влезать в экран */
+  .hm .cells i{height:12px;border-radius:3px}
   .hm-x{font-size:9px;color:var(--ink3);display:flex;justify-content:space-between;margin:6px 0 0 44px}
   .scale{display:flex;align-items:center;gap:7px;font-size:9.5px;color:var(--ink2);margin-top:10px}
   .scale .grad{flex:1;height:7px;border-radius:4px;
@@ -195,6 +206,28 @@ HTML = r'''<!doctype html>
     background-size:200% 100%;animation:sh 1.2s infinite;margin-bottom:10px}
   @keyframes sh{to{background-position:-200% 0}}
   @media (prefers-reduced-motion:reduce){.skel{animation:none}}
+  /* модалка «какие модели» */
+  button.pill{border:0;font:inherit;cursor:pointer}
+  button.pill:active{background:var(--hair2)}
+  .lnk{background:none;border:0;padding:0;font:inherit;font-size:11.5px;font-weight:600;
+    color:var(--brand-ink);cursor:pointer;text-decoration:underline}
+  .modal{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.55);display:flex;
+    align-items:flex-end;justify-content:center;padding:10px}
+  .sheet{background:var(--surface);border:1px solid var(--hair);border-radius:18px;width:100%;
+    max-width:520px;max-height:84vh;overflow:auto;padding:14px 15px 18px;box-shadow:var(--shadow);
+    animation:up .18s ease-out}
+  @keyframes up{from{transform:translateY(14px);opacity:.4}}
+  @media (prefers-reduced-motion:reduce){.sheet{animation:none}}
+  .sheet-hd{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px}
+  .sheet-hd h4{margin:0;font-size:15px}
+  .sheet-hd .x{background:var(--surface2);border:1px solid var(--hair);color:var(--ink2);
+    border-radius:9px;font:inherit;font-size:13px;line-height:1;padding:6px 9px;cursor:pointer}
+  .mrow{border-top:1px solid var(--hair);padding:10px 0 2px}
+  .mtop{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:13px}
+  .mtop b{font-weight:700}
+  .wbar{height:5px;border-radius:3px;background:var(--surface3);margin:6px 0 6px;overflow:hidden}
+  .wbar i{display:block;height:100%;background:var(--brand);border-radius:3px}
+  .mtxt{font-size:11.5px;color:var(--ink2);line-height:1.5}
   .foot{color:var(--ink3);font-size:10.5px;text-align:center;margin-top:18px;line-height:1.7}
   .foot a{color:var(--ink2);text-decoration:none;border-bottom:1px solid var(--hair2)}
   .foot a:active{color:var(--brand)}
@@ -247,7 +280,7 @@ const LVL_DESC=[
   'разнобой моделей — прогноз не устоялся, не планируйте по нему'];
 function modelsWord(n){const a=n%10,b=n%100;
   if(a===1&&b!==11)return'модель'; if(a>=2&&a<=4&&(b<10||b>=20))return'модели'; return'моделей';}
-const H_HOURLY='<h4 class="sec-h">🕐 Почасовой прогноз · 48 ч</h4>';
+const H_HOURLY='<h4 class="sec-h">🕐 Осадки · ближайшие 48 часов</h4>';
 const H_HIST='<h4 class="sec-h">📅 Как менялся прогноз</h4>';
 function wd(iso){return WD[new Date(iso+'T00:00:00').getDay()]}
 function dm(iso){const d=new Date(iso+'T00:00:00');return String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0')}
@@ -326,6 +359,49 @@ function dayStrip(days){
 const view=document.getElementById('view');
 let CACHE={};
 
+// ── Модалка «какие это модели» ───────────────────────────────────────────────
+// Веса и состав приходят из домена (/api/models, реестр §8.2) — здесь только
+// пользовательские пояснения, что это за модель и чем она полезна.
+const MODEL_DESC={
+  ifs:'Европейский центр среднесрочных прогнозов (Рединг). Эталон среднесрочного прогноза: обычно точнее всех на 2–7 суток, поэтому вес наибольший.',
+  icon:'Немецкая метеослужба. Мелкий шаг сетки и хорошая работа с рельефом — ценна для гор и ближних суток.',
+  gfs:'Американская глобальная модель. Обновляется часто и даёт независимый от европейской школы взгляд; на осадки в горах бывает щедра.',
+  gem:'Канадская глобальная модель. Своя физика и своя школа — расходится с европейскими не случайно, а по делу: именно это и делает разброс честным.',
+  arpege:'Французская модель. Сильна по Средиземноморью и югу Европы; горизонт короче остальных, отсюда меньший вес.'};
+let MODAL=null;
+function closeModal(){ if(MODAL){ MODAL.remove(); MODAL=null; } }
+function openSheet(html){
+  closeModal();
+  const el=document.createElement('div'); el.className='modal';
+  el.innerHTML=`<div class="sheet" role="dialog" aria-modal="true">${html}</div>`;
+  el.addEventListener('click',e=>{ if(e.target===el||e.target.closest('[data-close]')) closeModal(); });
+  document.body.appendChild(el); MODAL=el;
+  return el.querySelector('.sheet');
+}
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeModal(); });
+const SHEET_HD=`<div class="sheet-hd"><h4>🛰 Модели консенсуса</h4>
+  <button class="x" data-close aria-label="Закрыть">✕</button></div>`;
+async function showModels(n){
+  const sheet=openSheet(SHEET_HD+'<div class="skel"></div>');
+  try{
+    if(!CACHE.models) CACHE.models=(await api('/api/models')).models;
+    const ms=CACHE.models;
+    const rows=ms.map(m=>`<div class="mrow">
+      <div class="mtop"><b>${m.name}</b><span class="tiny">${m.center} · вес ${m.weight.toFixed(2)}</span></div>
+      <div class="wbar"><i style="width:${Math.round(m.weight*100)}%"></i></div>
+      <div class="mtxt">${MODEL_DESC[m.id]||''}</div></div>`).join('');
+    const miss=(n&&n<ms.length)
+      ? `<div class="note">В текущем расчёте <b>${n} из ${ms.length}</b>: остальные не дали данных на этот прогон (или день за их горизонтом выпуска). Надёжность при этом автоматически снижается.</div>` : '';
+    sheet.innerHTML=`${SHEET_HD}
+      <div class="mtxt" style="margin-bottom:2px">Прогноз — не одна модель, а ${ms.length} независимых:
+      их считают разные метеоцентры по разной физике. Мы берём все ${ms.length} и сводим во
+      взвешенные перцентили (p10 / p50 / p90) — каждая модель учитывается ровно один раз.</div>
+      ${rows}${miss}
+      <div class="note">Вес — насколько модели верим сейчас. Веса стартовые, по репутации моделей;
+      пересчёт по фактической точности на истории (Accuracy Engine) — следующая фаза.</div>`;
+  }catch(e){ sheet.innerHTML=SHEET_HD+'<div class="note">Не удалось загрузить состав моделей.</div>'; }
+}
+
 document.getElementById('seg').addEventListener('click',e=>{
   const b=e.target.closest('button'); if(!b) return;
   [...e.currentTarget.children].forEach(x=>x.classList.toggle('on',x===b));
@@ -335,6 +411,7 @@ document.getElementById('seg').addEventListener('click',e=>{
 async function api(u){const r=await fetch(u); if(!r.ok) throw new Error(r.status); return r.json();}
 
 async function loadHome(){
+  closeModal();
   if(tg&&tg.BackButton) tg.BackButton.hide();
   view.innerHTML='<div class="skel"></div><div class="skel"></div>';
   try{
@@ -392,14 +469,15 @@ function weeklyChart(days){
 }
 
 function relBlock(d){
-  const idx=[[0,'1 день'],[2,'3 дня'],[6,'7 дней']];
+  const idx=[[0,'1 день'],[2,'3 дня'],[6,'7 дней'],[13,'14 дней']];
   const chips=idx.filter(x=>d.days[x[0]]).map(([i,lab])=>{
     const dd=d.days[i], lvl=confLevel(dd,dd.n_models);
     return `<div class="relchip"><div class="h">${lab.toUpperCase()}</div>
-      <div class="dot ${CB[lvl]}"></div><div class="w ${GC[lvl]}">${CW[lvl]}</div></div>`;
+      <div class="dot ${CB[lvl]}"></div><div class="w ${GC[lvl]}">${CW[lvl]}</div>
+      <div class="relchip-n">${dd.n_models}/5 моделей</div></div>`;
   }).join('');
   const n=d.days[0]?d.days[0].n_models:d.n_models;
-  const far=d.days[6]||d.days[d.days.length-1];
+  const far=d.days[d.days.length-1];
   const nf=far?far.n_models:n;
   const cover=nf<n ? `Моделей в расчёте: <b>${n}/5</b> (к концу горизонта <b>${nf}/5</b>)`
                    : `Моделей в расчёте: <b>${n}/5</b>`;
@@ -409,7 +487,8 @@ function relBlock(d){
   return `<div class="rel"><h4>📊 Надёжность <span class="tiny" style="font-weight:400">— предварительно</span></h4>
     <div class="relrow">${chips}</div>
     <div class="relmeta">${cover} · согласованность на 3-й день: <b>${sw}</b> разброс (${g(spread)} мм).
-    Чем шире разрыв «в лучшем — в худшем случае» (p10–p90), тем ниже надёжность.</div>
+    Чем шире разрыв «в лучшем — в худшем случае» (p10–p90), тем ниже надёжность.
+    <button class="lnk" onclick="showModels(${n})">какие это модели?</button></div>
     <details class="rel-how"><summary>Как считается надёжность</summary>
       <div class="body">
         Один и тот же день считают до <b>5 независимых метеомоделей</b>. Надёжность — это
@@ -424,48 +503,52 @@ function relBlock(d){
 }
 
 async function loadForecast(id){
+  closeModal();
   view.innerHTML='<div class="skel"></div><div class="skel"></div>';
   if(tg&&tg.BackButton){tg.BackButton.show();tg.BackButton.onClick(loadHome);}
   try{
     const d=await api('/api/forecast?location='+encodeURIComponent(id));
     const upd=new Date(d.computed_at);
     const leg=`<div class="dayleg">
-      <span>🥾 однодневно · 🏕 с ночёвкой — <b>стоит ли идти</b></span>
-      <span><b>%</b> — вероятность осадков</span>
-      <span><i class="dd bg-a"></i> надёжность (разброс моделей)</span>
-      <span>в скобках — от <b>меньшего</b> дождя к <b>большему</b></span></div>`;
+      <span>🥾 день · 🏕 ночёвка — <b>вердикт: стоит ли идти</b></span>
+      <span>в скобках — от <b>меньшего</b> дождя к <b>большему</b> (p10–p90)</span></div>`;
     const rows=d.days.map((x,i)=>{
-      const lvl=confLevel(x, x.n_models);
       const hd=hikeDay(x), hn=hikeNight(x, d.days[i+1]);
-      const nm = x.n_models<5 ? ` · <span class="tiny">${x.n_models}/5 моделей</span>` : '';
       return `<div class="day">
       <div class="dt">${dm(x.day)}<small>${wd(x.day)}</small></div>
       <div class="ic">${HIL_IC[x.hil_level]}</div>
-      <div class="bw"><span class="band-num"><b>${g(x.p50)}</b> <u>(${g(x.p10)}–${g(x.p90)})</u> мм · ${x.hil_label}${nm}</span>
+      <div class="bw">
+        <div class="verdict">
+          <span class="vd">🥾 <b class="${GC[hd.lvl]}">${HW[hd.lvl]}</b><em>день</em></span>
+          <span class="vd">🏕 <b class="${GC[hn.lvl]}">${HW[hn.lvl]}</b><em>ночёвка${hn.partial?'*':''}</em></span>
+        </div>
+        <div class="daypop">вероятность дождя <b>${Math.round(x.pop*100)}%</b></div>
+        <div class="daymeta"><b>${g(x.p50)}</b> (${g(x.p10)}–${g(x.p90)}) мм · ${x.hil_label}</div>
         ${band(x)}
-        <div class="hike">
-          <span class="hbadge">🥾<i class="dd ${CB[hd.lvl]}"></i><span class="${GC[hd.lvl]}">${HW[hd.lvl]}</span><em>день</em></span>
-          <span class="hbadge">🏕<i class="dd ${CB[hn.lvl]}"></i><span class="${GC[hn.lvl]}">${HW[hn.lvl]}</span><em>ночёвка${hn.partial?'*':''}</em></span>
-          <span class="rel-inline" style="margin-left:auto"><i class="dd ${CB[lvl]}"></i><span class="${GC[lvl]} tiny">${CW[lvl]}</span></span>
-        </div></div>
-      <div class="pop">${Math.round(x.pop*100)}%<span class="lbl">вер-ть</span></div></div>`;
+      </div></div>`;
     }).join('');
     view.innerHTML=`<button class="back" onclick="loadHome()">‹ Все точки</button>
       <div class="dhead"><div class="loc">${d.location.name}</div><div class="tiny">${d.location.elevation_m} м</div></div>
-      <div class="row" style="margin:0 2px 10px"><span class="pill ok">🛰 ${d.n_models} ${modelsWord(d.n_models)}</span>
+      <div class="row" style="margin:0 2px 10px">
+        <button class="pill ok" onclick="showModels(${d.n_models})">🛰 ${d.n_models} ${modelsWord(d.n_models)} ⓘ</button>
         <span class="tiny">обновлено ${String(upd.getHours()).padStart(2,'0')}:${String(upd.getMinutes()).padStart(2,'0')}</span></div>
+      <section id="secHourly">${H_HOURLY}<div class="skel"></div></section>
       ${hikeHero(d.days)}${weeklyChart(d.days)}${relBlock(d)}<div class="days">${leg}${rows}
       <div class="tiny" style="padding:8px 2px 4px;line-height:1.4">* у последнего дня прогноза на следующие сутки ещё нет — оценка «с ночёвкой» предварительна.</div></div>
-      <section id="secHourly">${H_HOURLY}<div class="skel"></div></section>
       <section id="secHistory">${H_HIST}<div class="skel"></div></section>`;
     hydrateHourly(id); hydrateHistory(id);
   }catch(e){view.innerHTML='<div class="state">Прогноз ещё не рассчитан.</div>'}
 }
 
+// метка времени Open-Meteo — наивный ISO в UTC; '+Z' даёт верный момент,
+// дальше показываем в часовом поясе пользователя (а не в UTC — «непонятная дата»)
+function tsLocal(iso){return new Date(iso+'Z')}
+function hhmm(d){return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')}
+function dmt(d){return String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0')}
 function hourlyChart(h){
     const n=h.times.length;
     if(!n) return `<div class="note">Нет часовых данных на ближайшие 48 ч.</div>`;
-    const W=320,H=170,padL=6,padR=6,base=H-24,top=14;
+    const W=320,H=170,padL=6,padR=6,base=H-30,top=14;
     const mx=Math.max(2,...h.p90);
     const sx=i=>padL+i/(n-1)*(W-padL-padR);
     const sy=v=>base-Math.min(v,mx)/mx*(base-top);
@@ -483,27 +566,35 @@ function hourlyChart(h){
     // POP line (0..1 mapped to full height)
     let pop=''; for(let i=0;i<n;i++){ pop+=`${sx(i).toFixed(1)},${(base-(h.pop[i]||0)*(base-top)).toFixed(1)} `; }
     const popl=`<polyline points="${pop}" fill="none" stroke="var(--accent)" stroke-width="1.2" stroke-dasharray="3 2" opacity="0.9"></polyline>`;
-    // day separators + hour labels every 6h
-    let grid='',xl='';
+    // сетка и подписи каждые 6 ч — в местном времени; на смене суток подписываем дату
+    let grid='',xl='',dl='';
     for(let i=0;i<n;i+=6){
-      const hh=new Date(h.times[i]+'Z').getUTCHours();
+      const t=tsLocal(h.times[i]);
       grid+=`<line x1="${sx(i)}" y1="${top}" x2="${sx(i)}" y2="${base}" stroke="var(--hair)" stroke-width="0.5"></line>`;
-      xl+=`<text x="${sx(i)}" y="${H-8}" font-size="8" fill="var(--ink3)" text-anchor="middle">${String(hh).padStart(2,'0')}</text>`;
+      xl+=`<text x="${sx(i)}" y="${H-14}" font-size="8" fill="var(--ink3)" text-anchor="middle">${String(t.getHours()).padStart(2,'0')}</text>`;
+      const prev=i?tsLocal(h.times[i-6]):null;
+      if(!prev||prev.getDate()!==t.getDate())
+        dl+=`<text x="${Math.min(W-14,Math.max(14,sx(i)))}" y="${H-4}" font-size="7.5" fill="var(--ink3)" text-anchor="middle">${dmt(t)}</text>`;
     }
-    const svg=`<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Метеограмма 48 часов">
+    // отсчёт идёт от текущего часа: помечаем начало оси, чтобы «48 ч» читались буквально
+    const t0=tsLocal(h.times[0]), t1=tsLocal(h.times[n-1]);
+    const nowMark=`<line x1="${padL}" y1="${top-4}" x2="${padL}" y2="${base}" stroke="var(--accent)" stroke-width="1"></line>
+      <text x="${padL+3}" y="${top-5}" font-size="7.5" fill="var(--accent)">сейчас</text>`;
+    const svg=`<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Метеограмма на 48 часов вперёд">
       ${dry}${grid}<line x1="${padL}" y1="${base}" x2="${W-padR}" y2="${base}" stroke="var(--hair2)"></line>
-      ${band}${line}${popl}${xl}
-      <text x="${padL}" y="10" font-size="8" fill="var(--ink3)">осадки, мм/ч · часы UTC</text></svg>
+      ${band}${line}${popl}${nowMark}${xl}${dl}
+      <text x="${W-padR}" y="10" font-size="8" fill="var(--ink3)" text-anchor="end">осадки, мм/ч</text></svg>
       <div class="cl"><span><i class="sw" style="background:var(--precip)"></i>p50 + разброс</span>
       <span><i class="sw" style="background:var(--accent)"></i>вероятность</span>
       <span><i class="sw" style="background:color-mix(in srgb,var(--g) 40%,transparent)"></i>сухо</span></div></div>`;
-    // dry window summary
+    // окно и сухое окно — в часах от «сейчас»
     let firstWet=h.p50.findIndex(v=>v>=0.3);
     const dryHrs = firstWet<0 ? n : firstWet;
     const summary = dryHrs>0
       ? `Сухое окно: ближайшие <b>${dryHrs} ч</b>.`
       : `Осадки уже идут.`;
-    return `${svg}
+    const range=`<div class="tiny" style="margin:-2px 2px 8px">от <b>${dmt(t0)} ${hhmm(t0)}</b> до <b>${dmt(t1)} ${hhmm(t1)}</b> · ${n} ч · местное время</div>`;
+    return `${range}${svg}
       <div class="note" style="margin-top:10px">${summary} Пунктир — вероятность осадков, полоса — разброс от лучшего к худшему случаю по моделям (p10–p90).</div>`;
 }
 async function hydrateHourly(id){
@@ -551,6 +642,7 @@ async function hydrateHistory(id){
 }
 
 async function loadCompare(){
+  closeModal();
   if(tg&&tg.BackButton) tg.BackButton.hide();
   view.innerHTML='<div class="skel"></div>';
   try{
