@@ -284,8 +284,61 @@ async function loadForecast(id){
       <div class="row" style="margin:0 2px 10px"><span class="pill ok">Consensus ${d.n_models}/5</span>
         <span class="tiny">обновлено ${String(upd.getHours()).padStart(2,'0')}:${String(upd.getMinutes()).padStart(2,'0')}</span></div>
       ${weeklyChart(d.days)}${relBlock(d)}<div class="days">${rows}</div>
+      <button class="hbtn" onclick="loadHourly('${d.location.id}')"><span>🕐 Почасовой прогноз · 48 ч</span><span class="tiny">→</span></button>
       <button class="hbtn" onclick="loadHistory('${d.location.id}')"><span>📅 Как менялся прогноз</span><span class="tiny">→</span></button>`;
   }catch(e){view.innerHTML='<div class="state">Прогноз ещё не рассчитан.</div>'}
+}
+
+async function loadHourly(id){
+  view.innerHTML='<div class="skel"></div>';
+  if(tg&&tg.BackButton){tg.BackButton.show();tg.BackButton.onClick(()=>loadForecast(id));}
+  try{
+    const h=await api('/api/hourly?location='+encodeURIComponent(id));
+    const n=h.times.length;
+    if(!n){view.innerHTML=`<button class="back" onclick="loadForecast('${id}')">‹ Назад</button><div class="state">Нет часовых данных.</div>`;return}
+    const W=320,H=170,padL=6,padR=6,base=H-24,top=14;
+    const mx=Math.max(2,...h.p90);
+    const sx=i=>padL+i/(n-1)*(W-padL-padR);
+    const sy=v=>base-Math.min(v,mx)/mx*(base-top);
+    // dry-window shading (p50<0.1)
+    let dry='';
+    for(let i=0;i<n;i++){ if(h.p50[i]<0.1){ dry+=`<rect x="${sx(i)-1}" y="${top}" width="${(W-padL-padR)/(n-1)+1}" height="${base-top}" fill="var(--g)" opacity="0.05"></rect>`; } }
+    // band p10-p90 area
+    let up='',dn='';
+    for(let i=0;i<n;i++){ up+=`${sx(i).toFixed(1)},${sy(h.p90[i]).toFixed(1)} `; }
+    for(let i=n-1;i>=0;i--){ dn+=`${sx(i).toFixed(1)},${sy(h.p10[i]).toFixed(1)} `; }
+    const band=`<polygon points="${up}${dn}" fill="var(--precip)" opacity="0.22"></polygon>`;
+    // p50 line
+    let p50=''; for(let i=0;i<n;i++){ p50+=`${sx(i).toFixed(1)},${sy(h.p50[i]).toFixed(1)} `; }
+    const line=`<polyline points="${p50}" fill="none" stroke="var(--precip)" stroke-width="1.6"></polyline>`;
+    // POP line (0..1 mapped to full height)
+    let pop=''; for(let i=0;i<n;i++){ pop+=`${sx(i).toFixed(1)},${(base-(h.pop[i]||0)*(base-top)).toFixed(1)} `; }
+    const popl=`<polyline points="${pop}" fill="none" stroke="var(--accent)" stroke-width="1.2" stroke-dasharray="3 2" opacity="0.9"></polyline>`;
+    // day separators + hour labels every 6h
+    let grid='',xl='';
+    for(let i=0;i<n;i+=6){
+      const hh=new Date(h.times[i]+'Z').getUTCHours();
+      grid+=`<line x1="${sx(i)}" y1="${top}" x2="${sx(i)}" y2="${base}" stroke="var(--hair)" stroke-width="0.5"></line>`;
+      xl+=`<text x="${sx(i)}" y="${H-8}" font-size="8" fill="var(--ink3)" text-anchor="middle">${String(hh).padStart(2,'0')}</text>`;
+    }
+    const svg=`<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Метеограмма 48 часов">
+      ${dry}${grid}<line x1="${padL}" y1="${base}" x2="${W-padR}" y2="${base}" stroke="var(--hair2)"></line>
+      ${band}${line}${popl}${xl}
+      <text x="${padL}" y="10" font-size="8" fill="var(--ink3)">осадки, мм/ч · часы UTC</text></svg>
+      <div class="cl"><span><i class="sw" style="background:var(--precip)"></i>p50 + разброс</span>
+      <span><i class="sw" style="background:var(--accent)"></i>вероятность</span>
+      <span><i class="sw" style="background:color-mix(in srgb,var(--g) 40%,transparent)"></i>сухо</span></div></div>`;
+    // dry window summary
+    let firstWet=h.p50.findIndex(v=>v>=0.3);
+    const dryHrs = firstWet<0 ? n : firstWet;
+    const summary = dryHrs>0
+      ? `Сухое окно: ближайшие <b>${dryHrs} ч</b>.`
+      : `Осадки уже идут.`;
+    view.innerHTML=`<button class="back" onclick="loadForecast('${id}')">‹ ${h.location.name}</button>
+      <div class="dhead"><div class="loc">Почасовой · 48 ч</div></div>
+      ${svg}
+      <div class="note" style="margin-top:10px">${summary} Пунктир — вероятность осадков, полоса — разброс p10–p90 по моделям.</div>`;
+  }catch(e){view.innerHTML=`<button class="back" onclick="loadForecast('${id}')">‹ Назад</button><div class="state">Не удалось загрузить почасовой прогноз.</div>`}
 }
 
 function heatColor(v,mx){

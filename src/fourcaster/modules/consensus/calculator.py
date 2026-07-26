@@ -40,6 +40,45 @@ def weighted_percentile(
     return float(np.interp(q, cum, v))
 
 
+def compute_hourly(series: list[dict], *, max_hours: int = 48) -> dict:
+    """Часовой консенсус осадков по моделям для метеограммы (US-FC-2).
+
+    series — сырые часовые ряды из Open-Meteo: [{model_openmeteo_id, times,
+    precip, pop}]. Возвращает выровненные массивы p10/p50/p90 и POP по часам.
+    """
+    from fourcaster.modules.consensus.models import BY_OPENMETEO_ID
+
+    known = [s for s in series if s["model_openmeteo_id"] in BY_OPENMETEO_ID]
+    if not known:
+        return {"times": [], "p10": [], "p50": [], "p90": [], "pop": []}
+
+    n = min(max_hours, min(len(s["times"]) for s in known))
+    times = known[0]["times"][:n]
+    weights_all = np.asarray(
+        [BY_OPENMETEO_ID[s["model_openmeteo_id"]].weight for s in known], dtype=float
+    )
+
+    p10, p50, p90, pop = [], [], [], []
+    for i in range(n):
+        vals = np.asarray([s["precip"][i] for s in known], dtype=float)
+        w = weights_all / weights_all.sum()
+        p10.append(round(weighted_percentile(vals, w, 0.10), 2))
+        p50.append(round(weighted_percentile(vals, w, 0.50), 2))
+        p90.append(round(weighted_percentile(vals, w, 0.90), 2))
+        probs, pw = [], []
+        for s, wi in zip(known, weights_all):
+            v = s["pop"][i]
+            if v is not None:
+                probs.append(v)
+                pw.append(wi)
+        if probs:
+            pop.append(round(float(np.average(probs, weights=np.asarray(pw))), 2))
+        else:
+            pop.append(round(float(w[vals > 0.1].sum()), 2))
+
+    return {"times": times, "p10": p10, "p50": p50, "p90": p90, "pop": pop}
+
+
 def compute_consensus(
     snapshots: list[ModelSnapshot], *, max_days: int
 ) -> list[DayConsensus]:

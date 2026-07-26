@@ -56,6 +56,52 @@ class OpenMeteoProvider:
         return parse_daily_payload(payload, model_ids)
 
 
+    def fetch_hourly(
+        self,
+        *,
+        lat: float,
+        lon: float,
+        elevation_m: int,
+        model_ids: Sequence[str],
+        forecast_days: int = 2,
+    ) -> list[dict]:
+        """Часовые ряды осадков по моделям (для метеограммы, US-FC-2)."""
+        params = {
+            "latitude": lat,
+            "longitude": lon,
+            "elevation": elevation_m,
+            "hourly": "precipitation,precipitation_probability",
+            "models": ",".join(model_ids),
+            "timezone": "UTC",
+            "forecast_days": forecast_days,
+            "cell_selection": "nearest",
+        }
+        headers = {"User-Agent": USER_AGENT}
+        with httpx.Client(timeout=self._timeout, headers=headers) as client:
+            resp = client.get(FORECAST_URL, params=params)
+            resp.raise_for_status()
+            payload = resp.json()
+        return parse_hourly_payload(payload, model_ids)
+
+
+def parse_hourly_payload(payload: dict, model_ids: Sequence[str]) -> list[dict]:
+    hourly = payload.get("hourly", {})
+    times = hourly.get("time", [])
+    out: list[dict] = []
+    for mid in model_ids:
+        precip = hourly.get(f"precipitation_{mid}") or hourly.get("precipitation")
+        pop = hourly.get(f"precipitation_probability_{mid}") or hourly.get("precipitation_probability")
+        if precip is None:
+            continue
+        out.append({
+            "model_openmeteo_id": mid,
+            "times": list(times),
+            "precip": [float(v) if v is not None else 0.0 for v in precip],
+            "pop": [(float(v) / 100.0 if v is not None else None) for v in (pop or [None] * len(times))],
+        })
+    return out
+
+
 def parse_daily_payload(
     payload: dict, model_ids: Sequence[str]
 ) -> list[RawModelSeries]:

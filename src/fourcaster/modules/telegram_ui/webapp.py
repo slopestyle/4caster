@@ -99,6 +99,25 @@ async def api_forecast(location: str) -> dict:
     }
 
 
+@app.get("/api/hourly")
+async def api_hourly(location: str) -> dict:
+    from fourcaster.modules.consensus.calculator import compute_hourly
+    from fourcaster.modules.consensus.models import MODELS
+    from fourcaster.modules.ingestion.infrastructure.openmeteo.client import OpenMeteoProvider
+
+    try:
+        loc = get_location(location)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="unknown location")
+    provider = OpenMeteoProvider()
+    series = provider.fetch_hourly(
+        lat=loc.lat, lon=loc.lon, elevation_m=loc.elevation_m,
+        model_ids=[m.openmeteo_id for m in MODELS],
+    )
+    data = compute_hourly(series)
+    return {"location": {"id": loc.id, "name": loc.name}, **data}
+
+
 @app.get("/api/history")
 async def api_history(location: str) -> dict:
     _, _, engine = _components()
