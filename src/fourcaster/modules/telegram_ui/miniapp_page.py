@@ -18,19 +18,46 @@ HTML = r'''<!doctype html>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
   :root{
-    --bg:#0c1119; --surface:#131a26; --surface2:#1a2333; --surface3:#212d40;
-    --ink:#e7ecf4; --ink2:#98a4b8; --ink3:#66738a; --hair:#243044;
-    --brand:#46b6b8; --precip:#6ea3d6;
-    --g:#3bb37c; --a:#d8ac3e; --o:#e08749; --r:#dd5a4e;
+    color-scheme:dark light;
+    --bg:#141516; --surface:#1e2024; --surface2:#26292f; --surface3:#323841;
+    --ink:#f4f5f7; --ink2:#a7adb8; --ink3:#767d89; --hair:#333841; --hair2:#414852;
+    --brand:#ff6b35; --brand-ink:#ff8a5c; --brand-wash:#3a2116;
+    --accent:#ff6b35; --precip:#6f9bd0;
+    --g:#4bbf7f; --a:#e0b13e; --o:#f0783a; --r:#ec5648;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 26px rgba(0,0,0,.5);
   }
+  @media (prefers-color-scheme:light){:root{
+    --bg:#eceef1; --surface:#ffffff; --surface2:#f4f5f7; --surface3:#e8eaee;
+    --ink:#161719; --ink2:#565c68; --ink3:#828996; --hair:#e2e5ea; --hair2:#d1d6de;
+    --brand:#e85a26; --brand-ink:#c74a1c; --brand-wash:#ffe9df;
+    --accent:#e85a26; --precip:#3f74b8;
+    --g:#2f9e6a; --a:#bf8c18; --o:#e8632a; --r:#dc4433;
+    --shadow:0 1px 2px rgba(20,25,35,.06),0 6px 18px rgba(20,25,35,.10);
+  }}
+  :root[data-theme="dark"]{
+    --bg:#141516; --surface:#1e2024; --surface2:#26292f; --surface3:#323841;
+    --ink:#f4f5f7; --ink2:#a7adb8; --ink3:#767d89; --hair:#333841; --hair2:#414852;
+    --brand:#ff6b35; --brand-ink:#ff8a5c; --brand-wash:#3a2116;
+    --accent:#ff6b35; --precip:#6f9bd0;
+    --g:#4bbf7f; --a:#e0b13e; --o:#f0783a; --r:#ec5648;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 26px rgba(0,0,0,.5);
+  }
+  :root[data-theme="light"]{
+    --bg:#eceef1; --surface:#ffffff; --surface2:#f4f5f7; --surface3:#e8eaee;
+    --ink:#161719; --ink2:#565c68; --ink3:#828996; --hair:#e2e5ea; --hair2:#d1d6de;
+    --brand:#e85a26; --brand-ink:#c74a1c; --brand-wash:#ffe9df;
+    --accent:#e85a26; --precip:#3f74b8;
+    --g:#2f9e6a; --a:#bf8c18; --o:#e8632a; --r:#dc4433;
+    --shadow:0 1px 2px rgba(20,25,35,.06),0 6px 18px rgba(20,25,35,.10);
+  }
+  .card,.chart,.days,.rel,.cmp,.hm{box-shadow:var(--shadow)}
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   body{margin:0;background:var(--bg);color:var(--ink);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
     padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
   .app{max-width:520px;margin:0 auto;padding:14px 14px 28px}
   header.hd{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:12px}
-  .wordmark{font-family:"Iowan Old Style",Palatino,Georgia,serif;font-weight:600;
-    letter-spacing:.12em;font-size:15px}
+  .wordmark{font-weight:800;letter-spacing:.15em;font-size:15px;text-transform:uppercase}
   .wordmark b{color:var(--brand)}
   .subttl{color:var(--ink2);font-size:12px}
   .muted{color:var(--ink2)} .tiny{color:var(--ink3);font-size:11px}
@@ -40,7 +67,7 @@ HTML = r'''<!doctype html>
     padding:3px;margin-bottom:14px;gap:3px}
   .seg button{flex:1;border:0;background:none;color:var(--ink2);font:inherit;font-size:13px;
     font-weight:600;padding:8px;border-radius:9px;cursor:pointer}
-  .seg button.on{background:var(--surface);color:var(--ink)}
+  .seg button.on{background:var(--brand);color:#fff}
 
   .card{background:var(--surface);border:1px solid var(--hair);border-radius:16px;
     padding:13px 14px;margin-bottom:10px;display:block;width:100%;text-align:left;
@@ -55,7 +82,7 @@ HTML = r'''<!doctype html>
   .pill.ok{color:var(--brand)}
 
   .dhead{display:flex;justify-content:space-between;align-items:baseline;margin:4px 2px 12px}
-  .dhead .loc{font-family:"Iowan Old Style",Palatino,Georgia,serif;font-size:20px}
+  .dhead .loc{font-size:20px;font-weight:750;letter-spacing:-.01em}
 
   /* weekly chart */
   .chart{background:var(--surface);border:1px solid var(--hair);border-radius:16px;padding:12px 10px 6px;
@@ -144,16 +171,18 @@ HTML = r'''<!doctype html>
 </div>
 <script>
 const tg = window.Telegram && window.Telegram.WebApp;
-if(tg){ tg.ready(); tg.expand(); applyTheme(); tg.onEvent('themeChanged', applyTheme); }
 function applyTheme(){
-  const p = tg.themeParams || {}; const s = document.documentElement.style;
-  if(p.bg_color) s.setProperty('--bg', p.bg_color);
-  if(p.secondary_bg_color) s.setProperty('--surface', p.secondary_bg_color);
-  if(p.text_color) s.setProperty('--ink', p.text_color);
-  if(p.hint_color){ s.setProperty('--ink2', p.hint_color); s.setProperty('--ink3', p.hint_color); }
-  if(p.section_separator_color) s.setProperty('--hair', p.section_separator_color);
-  if(p.link_color) s.setProperty('--brand', p.link_color);
+  // выбираем нашу свет/тёмную палитру по схеме клиента (гарантированный контраст),
+  // а не тянем сырые themeParams (из-за них подложки сливались с фоном).
+  const scheme = (tg && tg.colorScheme) || (matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light');
+  document.documentElement.setAttribute('data-theme', scheme);
+  if(tg){ try{
+    const bg = getComputedStyle(document.body).backgroundColor;
+    tg.setBackgroundColor(bg); tg.setHeaderColor(bg);
+  }catch(e){} }
 }
+if(tg){ tg.ready(); tg.expand(); tg.onEvent('themeChanged', applyTheme); }
+applyTheme();
 const HIL_IC=['☁️','🌦','🌧','🌧','🌧','⛈'];
 const WD=['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
 const MAX=60;
