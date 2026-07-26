@@ -42,9 +42,8 @@ def forecast_keyboard(location_id: str, subscribed: bool) -> InlineKeyboardMarku
 
 
 def start_keyboard() -> InlineKeyboardMarkup:
-    """Стартовая клавиатура: только общая информация + кнопка приложения."""
+    """Стартовая клавиатура: только кнопка приложения."""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text="🗺️ Открыть приложение", web_app=WebAppInfo(url=MINIAPP_URL))],
-        [InlineKeyboardButton(text="❓ Что значат числа?", callback_data=HELP_CB)],
     ])
