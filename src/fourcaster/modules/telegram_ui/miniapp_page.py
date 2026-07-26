@@ -105,6 +105,20 @@ HTML = r'''<!doctype html>
   .cmp .v{font-variant-numeric:tabular-nums;font-weight:600}
   .cmp .v small{color:var(--ink3);font-weight:500}
 
+  /* history heatmap */
+  .hbtn{width:100%;background:var(--surface);border:1px solid var(--hair);border-radius:14px;
+    padding:12px 14px;color:var(--ink);font:inherit;font-size:13px;font-weight:600;text-align:left;
+    cursor:pointer;display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+  .hbtn:active{background:var(--surface2)}
+  .hm{background:var(--surface);border:1px solid var(--hair);border-radius:16px;padding:14px}
+  .hmrow{display:grid;grid-template-columns:38px 1fr;gap:6px;align-items:center;margin-bottom:3px}
+  .hm .yl{font-size:9.5px;color:var(--ink3);font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
+  .hm .cells{display:grid;gap:3px}
+  .hm .cells i{aspect-ratio:1;border-radius:3px;min-height:14px}
+  .hm-x{font-size:9px;color:var(--ink3);display:flex;justify-content:space-between;margin:6px 0 0 44px}
+  .scale{display:flex;align-items:center;gap:7px;font-size:9.5px;color:var(--ink2);margin-top:10px}
+  .scale .grad{flex:1;height:7px;border-radius:4px;
+    background:linear-gradient(90deg,var(--surface3),color-mix(in srgb,var(--precip) 40%,var(--surface3)),var(--precip))}
   .state{text-align:center;color:var(--ink2);padding:40px 12px;font-size:14px}
   .back{background:none;border:0;color:var(--brand);font:inherit;font-size:14px;font-weight:600;
     padding:6px 0;cursor:pointer;margin-bottom:4px}
@@ -240,8 +254,37 @@ async function loadForecast(id){
       <div class="dhead"><div class="loc">${d.location.name}</div><div class="tiny">${d.location.elevation_m} м</div></div>
       <div class="row" style="margin:0 2px 10px"><span class="pill ok">Consensus ${d.n_models}/5</span>
         <span class="tiny">обновлено ${String(upd.getHours()).padStart(2,'0')}:${String(upd.getMinutes()).padStart(2,'0')}</span></div>
-      ${weeklyChart(d.days)}${relBlock(d)}<div class="days">${rows}</div>`;
+      ${weeklyChart(d.days)}${relBlock(d)}<div class="days">${rows}</div>
+      <button class="hbtn" onclick="loadHistory('${d.location.id}')"><span>📅 Как менялся прогноз</span><span class="tiny">→</span></button>`;
   }catch(e){view.innerHTML='<div class="state">Прогноз ещё не рассчитан.</div>'}
+}
+
+function heatColor(v,mx){
+  if(v==null) return 'var(--surface3)';
+  const pct=Math.round(Math.min(v,mx)/(mx||1)*100);
+  return `color-mix(in srgb,var(--precip) ${pct}%,var(--surface3))`;
+}
+async function loadHistory(id){
+  view.innerHTML='<div class="skel"></div>';
+  if(tg&&tg.BackButton){tg.BackButton.show();tg.BackButton.onClick(()=>loadForecast(id));}
+  try{
+    const h=await api('/api/history?location='+encodeURIComponent(id));
+    const n=h.issues.length;
+    if(!n){view.innerHTML=`<button class="back" onclick="loadForecast('${id}')">‹ Назад</button>
+      <div class="state">История пуста — накопится за несколько циклов (каждые 4 ч).</div>`;return}
+    const gtc=`grid-template-columns:repeat(${n},1fr)`;
+    const body=h.rows.map(r=>{
+      const cells=r.vals.map(v=>`<i style="background:${heatColor(v,h.max)}" title="${v==null?'—':Math.round(v*10)/10+' мм'}"></i>`).join('');
+      return `<div class="hmrow"><span class="yl">${dm(r.date)}</span><div class="cells" style="${gtc}">${cells}</div></div>`;
+    }).join('');
+    const fmtIssue=iso=>{const d=new Date(iso);return String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')};
+    view.innerHTML=`<button class="back" onclick="loadForecast('${id}')">‹ ${h.location.name}</button>
+      <div class="dhead"><div class="loc">Как менялся прогноз</div></div>
+      <div class="muted" style="font-size:11px;margin:0 2px 10px">Строки — прогнозируемая дата, столбцы — момент выпуска прогноза (${n}). Цвет — осадки p50.</div>
+      <div class="hm">${body}<div class="hm-x"><span>${fmtIssue(h.issues[0])}</span><span>${n>1?fmtIssue(h.issues[n-1]):''} →</span></div>
+        <div class="scale"><span>сухо</span><div class="grad"></div><span>ливень</span></div></div>
+      <div class="note" style="margin-top:10px">Стабильные столбцы справа — прогноз «устаканился». Скачки — модели меняли мнение. Накапливается автоматически каждые 4 часа.</div>`;
+  }catch(e){view.innerHTML=`<button class="back" onclick="loadForecast('${id}')">‹ Назад</button><div class="state">Не удалось загрузить историю.</div>`}
 }
 
 async function loadCompare(){

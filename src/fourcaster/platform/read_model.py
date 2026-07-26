@@ -4,13 +4,15 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from datetime import datetime
+
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Engine
 
 from fourcaster.modules.consensus.calculator import DayConsensus
 from fourcaster.modules.hazard.rain import classify_hil
-from fourcaster.platform.models import ForecastCardCache
+from fourcaster.platform.models import ForecastCardCache, ForecastHistory
 
 
 def _consensus_to_json(days: list[DayConsensus]) -> list[dict]:
@@ -76,6 +78,61 @@ def get_card_full(engine: Engine, location_id: str) -> dict | None:
         "days_count": row.days,
         "days": row.consensus,
         "n_models": (row.consensus[0]["n_models"] if row.consensus else 0),
+    }
+
+
+def insert_history(
+    engine: Engine, *, location_id: str, issued_at: datetime, days: list[DayConsensus]
+) -> None:
+    """Append строк эволюции прогноза за один цикл (идемпотентно по PK)."""
+    rows = [{
+        "location_id": location_id,
+        "issued_at": issued_at,
+        "valid_date": d.day,
+        "p10": d.p10, "p50": d.p50, "p90": d.p90, "pop": d.pop,
+        "hil_level": classify_hil(d.p50).level,
+    } for d in days]
+    if not rows:
+        return
+    stmt = insert(ForecastHistory).values(rows).on_conflict_do_nothing(
+        index_elements=[
+            ForecastHistory.location_id,
+            ForecastHistory.issued_at,
+            ForecastHistory.valid_date,
+        ]
+    )
+    with engine.begin() as conn:
+        conn.execute(stmt)
+
+
+def get_history(engine: Engine, location_id: str, *, max_issues: int = 14) -> dict:
+    """Матрица эволюции: последние N моментов выпуска × прогнозируемые даты → p50."""
+    stmt = (
+        select(
+            ForecastHistory.issued_at,
+            ForecastHistory.valid_date,
+            ForecastHistory.p50,
+        )
+        .where(ForecastHistory.location_id == location_id)
+        .order_by(ForecastHistory.issued_at, ForecastHistory.valid_date)
+    )
+    with engine.connect() as conn:
+        recs = conn.execute(stmt).all()
+
+    issues = sorted({r.issued_at for r in recs})[-max_issues:]
+    issue_set = set(issues)
+    valid_dates = sorted({r.valid_date for r in recs})
+    cell = {(r.issued_at, r.valid_date): r.p50 for r in recs if r.issued_at in issue_set}
+
+    max_p50 = max((v for v in cell.values()), default=0.0)
+    rows = [{
+        "date": vd.isoformat(),
+        "vals": [cell.get((iss, vd)) for iss in issues],
+    } for vd in valid_dates]
+    return {
+        "issues": [i.isoformat() for i in issues],
+        "rows": rows,
+        "max": max_p50,
     }
 
 

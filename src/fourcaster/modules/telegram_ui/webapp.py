@@ -21,7 +21,7 @@ from fourcaster.modules.telegram_ui.bot import create_bot, create_dispatcher
 from fourcaster.modules.telegram_ui.miniapp_page import HTML as MINIAPP_HTML
 from fourcaster.platform.config import telegram_token, telegram_webhook_secret
 from fourcaster.platform.db import make_engine
-from fourcaster.platform.read_model import get_card_full, list_cards
+from fourcaster.platform.read_model import get_card_full, get_history, list_cards
 
 app = FastAPI(title="4CASTER")
 
@@ -97,6 +97,17 @@ async def api_forecast(location: str) -> dict:
         },
         **data,
     }
+
+
+@app.get("/api/history")
+async def api_history(location: str) -> dict:
+    _, _, engine = _components()
+    try:
+        loc = get_location(location)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="unknown location")
+    hist = get_history(engine, location)
+    return {"location": {"id": loc.id, "name": loc.name}, **hist}
 
 
 @app.post("/api/telegram")

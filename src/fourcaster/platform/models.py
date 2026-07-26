@@ -7,9 +7,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import DateTime, Integer, String, Text, func
+from sqlalchemy import Date, DateTime, Float, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -30,3 +30,21 @@ class ForecastCardCache(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class ForecastHistory(Base):
+    """Эволюция прогноза (PRD §10.7, US-HIST-1): по одной строке на
+    (локация, момент выпуска прогноза, прогнозируемая дата). Append-only,
+    накапливается каждым циклом — из неё строится heat-map «как менялся
+    прогноз на дату X»."""
+
+    __tablename__ = "forecast_history"
+
+    location_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    valid_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    p10: Mapped[float] = mapped_column(Float)
+    p50: Mapped[float] = mapped_column(Float)
+    p90: Mapped[float] = mapped_column(Float)
+    pop: Mapped[float] = mapped_column(Float)
+    hil_level: Mapped[int] = mapped_column(Integer)

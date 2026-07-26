@@ -84,7 +84,7 @@ def main(argv: list[str] | None = None) -> int:
     engine = None
     if args.save:
         from fourcaster.platform.db import make_engine
-        from fourcaster.platform.read_model import upsert_card
+        from fourcaster.platform.read_model import insert_history, upsert_card
         engine = make_engine()
 
     for i, loc_id in enumerate(args.locations):
@@ -101,6 +101,8 @@ def main(argv: list[str] | None = None) -> int:
         if engine is not None:
             upsert_card(engine, location_id=location.id, computed_at=computed_at,
                         days=consensus, rendered_text=card)
+            insert_history(engine, location_id=location.id, issued_at=computed_at,
+                           days=consensus)
             print(f"→ сохранено в БД: {location.id}", file=sys.stderr)
     return 0
 
