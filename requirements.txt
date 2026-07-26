@@ -1,8 +1,5 @@
-# Зависимости рантайма бота для Vercel (Vercel Python читает requirements.txt).
-# Каноничный список — в pyproject.toml; здесь только то, что нужно webhook-функции.
-aiogram>=3.4
-fastapi>=0.110
-sqlalchemy>=2.0
-psycopg[binary]>=3.1
-python-dotenv>=1.0
-numpy>=1.26
+# Vercel выполняет `pip install -r requirements.txt` в корне репозитория.
+# Ставим сам пакет 4caster из pyproject — он тянет все нужные зависимости
+# (aiogram, fastapi, sqlalchemy, psycopg, numpy, ...). Тогда `import fourcaster`
+# работает из site-packages, без бандлинга src/ и без блока functions.
+.
