@@ -58,3 +58,41 @@ def get_card(engine: Engine, location_id: str) -> str | None:
     )
     with engine.connect() as conn:
         return conn.execute(stmt).scalar_one_or_none()
+
+
+def get_card_full(engine: Engine, location_id: str) -> dict | None:
+    """Структурированная карточка для Mini App (JSON API)."""
+    stmt = select(
+        ForecastCardCache.computed_at,
+        ForecastCardCache.days,
+        ForecastCardCache.consensus,
+    ).where(ForecastCardCache.location_id == location_id)
+    with engine.connect() as conn:
+        row = conn.execute(stmt).first()
+    if row is None:
+        return None
+    return {
+        "computed_at": row.computed_at.isoformat(),
+        "days_count": row.days,
+        "days": row.consensus,
+        "n_models": (row.consensus[0]["n_models"] if row.consensus else 0),
+    }
+
+
+def list_cards(engine: Engine) -> dict[str, dict]:
+    """Сводка по всем закэшированным локациям: {location_id: {computed_at, today}}."""
+    stmt = select(
+        ForecastCardCache.location_id,
+        ForecastCardCache.computed_at,
+        ForecastCardCache.consensus,
+    )
+    with engine.connect() as conn:
+        rows = conn.execute(stmt).all()
+    out: dict[str, dict] = {}
+    for r in rows:
+        out[r.location_id] = {
+            "computed_at": r.computed_at.isoformat(),
+            "today": (r.consensus[0] if r.consensus else None),
+            "n_models": (r.consensus[0]["n_models"] if r.consensus else 0),
+        }
+    return out

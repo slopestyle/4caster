@@ -13,13 +13,17 @@ from functools import lru_cache
 from aiogram import Bot, Dispatcher
 from aiogram.types import Update
 from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi.responses import HTMLResponse
 from sqlalchemy.engine import Engine
 
+from fourcaster.modules.locations import CATALOG, get_location
 from fourcaster.modules.telegram_ui.bot import create_bot, create_dispatcher
+from fourcaster.modules.telegram_ui.miniapp_page import HTML as MINIAPP_HTML
 from fourcaster.platform.config import telegram_token, telegram_webhook_secret
 from fourcaster.platform.db import make_engine
+from fourcaster.platform.read_model import get_card_full, list_cards
 
-app = FastAPI(title="4CASTER bot")
+app = FastAPI(title="4CASTER")
 
 
 @lru_cache(maxsize=1)
@@ -46,11 +50,53 @@ async def _webhook(request: Request, secret_header: str | None) -> dict:
     return {"ok": True}
 
 
-# Алиасы путей: Vercel может передать ASGI как исходный путь, так и "/".
 @app.get("/api/telegram")
-@app.get("/")
 async def health() -> dict:
     return await _health()
+
+
+# ---- Telegram Mini App: страница + JSON API (read-модель) ----
+
+@app.get("/", response_class=HTMLResponse)
+@app.get("/app", response_class=HTMLResponse)
+async def miniapp() -> str:
+    return MINIAPP_HTML
+
+
+@app.get("/api/locations")
+async def api_locations() -> dict:
+    _, _, engine = _components()
+    cards = list_cards(engine)
+    locations = []
+    for loc in CATALOG.values():
+        c = cards.get(loc.id)
+        locations.append({
+            "id": loc.id, "name": loc.name,
+            "elevation_m": loc.elevation_m, "cluster": loc.cluster,
+            "computed_at": c["computed_at"] if c else None,
+            "today": c["today"] if c else None,
+            "n_models": c["n_models"] if c else 0,
+        })
+    return {"locations": locations}
+
+
+@app.get("/api/forecast")
+async def api_forecast(location: str) -> dict:
+    _, _, engine = _components()
+    try:
+        loc = get_location(location)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="unknown location")
+    data = get_card_full(engine, location)
+    if data is None:
+        raise HTTPException(status_code=404, detail="no forecast yet")
+    return {
+        "location": {
+            "id": loc.id, "name": loc.name,
+            "elevation_m": loc.elevation_m, "cluster": loc.cluster,
+        },
+        **data,
+    }
 
 
 @app.post("/api/telegram")

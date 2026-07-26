@@ -12,7 +12,7 @@ from aiogram.types import InlineKeyboardMarkup
 from sqlalchemy.engine import Engine
 
 from fourcaster.modules.locations import CATALOG, get_location
-from fourcaster.modules.telegram_ui.keyboards import locations_keyboard
+from fourcaster.modules.telegram_ui.keyboards import locations_keyboard, start_keyboard
 from fourcaster.platform.read_model import get_card
 
 
@@ -30,7 +30,7 @@ def start_reply() -> BotReply:
         f"Доступные точки: {names}\n\n"
         "Выберите локацию или отправьте /forecast."
     )
-    return BotReply(text, locations_keyboard())
+    return BotReply(text, start_keyboard())
 
 
 def locations_reply() -> BotReply:
