@@ -222,8 +222,12 @@ const H_HIST='<h4 class="sec-h">📅 Как менялся прогноз</h4>';
 function wd(iso){return WD[new Date(iso+'T00:00:00').getDay()]}
 function dm(iso){const d=new Date(iso+'T00:00:00');return String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0')}
 function g(v){return Math.round(v*10)/10}
+// √-шкала: осадки сильно скошены (много нулей, тяжёлый хвост) — корень поднимает
+// морось и сжимает ливень, порядок дней сохраняется. Точную величину несёт число.
+function sq(v){return Math.sqrt(Math.max(0,v))}
 function band(d){
-  const l=Math.max(0,d.p10/MAX*100),w=Math.max(1.5,(d.p90-d.p10)/MAX*100),m=d.p50/MAX*100;
+  const S=v=>sq(v)/sq(MAX)*100;
+  const l=Math.max(0,S(d.p10)),w=Math.max(2,S(d.p90)-S(d.p10)),m=S(d.p50);
   return `<div class="track"><div class="rng" style="left:${l}%;width:${w}%"></div><div class="p50" style="left:${m}%"></div></div>`;
 }
 // качественная надёжность по относительному разбросу моделей + согласию
@@ -282,24 +286,37 @@ async function loadHome(){
 }
 
 function weeklyChart(days){
-  const W=300,H=120,pad=16,base=H-22,top=8;
+  const W=300,H=132,pad=16,base=H-22,top=18;
   const mx=Math.max(6,...days.map(d=>d.p90));
+  const fmx=sq(mx);
   const bw=(W-2*pad)/days.length;
-  let bars='',wsk='',xl='';
+  const y=v=>base-(sq(v)/fmx)*(base-top);
+  // засечки шкалы (мм) — бледные линии с подписью у правого края
+  const ticks=[1,2,5,10,20,40,80].filter(t=>t<=mx);
+  let grid=ticks.map(t=>`<line x1="${pad}" y1="${y(t)}" x2="${W-pad}" y2="${y(t)}" stroke="var(--hair)" stroke-width="0.6"></line>
+    <text x="${W-pad+2}" y="${y(t)+2.5}" font-size="7" fill="var(--ink3)">${t}</text>`).join('');
+  grid+=`<text x="${W-pad+2}" y="${top-6}" font-size="7" fill="var(--ink3)">мм</text>`;
+  let peak=0; days.forEach((d,i)=>{ if(d.p50>days[peak].p50) peak=i; });
+  let bars='',wsk='',lbl='',xl='';
   days.forEach((d,i)=>{
     const x=pad+i*bw+bw/2;
-    const y=v=>base-(Math.min(v,mx)/mx)*(base-top);
     const bh=base-y(d.p50);
     bars+=`<rect x="${x-bw*0.28}" y="${y(d.p50)}" width="${bw*0.56}" height="${Math.max(1,bh)}" rx="2" fill="var(--precip)"></rect>`;
     wsk+=`<line x1="${x}" y1="${y(d.p10)}" x2="${x}" y2="${y(d.p90)}" stroke="var(--ink3)" stroke-width="1.4"></line>
       <line x1="${x-3}" y1="${y(d.p90)}" x2="${x+3}" y2="${y(d.p90)}" stroke="var(--ink3)" stroke-width="1.4"></line>`;
+    // подписи — только пик и дни со значимым дождём (≥1 мм); сухие не подписываем
+    if(i===peak || Math.round(d.p50)>=1){
+      const lx=Math.min(W-11,Math.max(11,x));
+      lbl+=`<text x="${lx}" y="${Math.max(8,y(d.p50)-3)}" font-size="7.5" fill="var(--ink)" text-anchor="middle" style="font-variant-numeric:tabular-nums">${g(d.p50)}</text>`;
+    }
     xl+=`<text x="${x}" y="${H-6}" font-size="8.5" fill="var(--ink3)" text-anchor="middle">${wd(d.day)}</text>`;
   });
-  return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Осадки по дням">
-    <line x1="${pad}" y1="${base}" x2="${W-pad}" y2="${base}" stroke="var(--hair)"></line>
-    ${bars}${wsk}${xl}</svg>
-    <div class="cl"><span><i class="sw" style="background:var(--precip)"></i>p50, мм/сут</span>
-    <span><i class="sw" style="background:var(--ink3)"></i>разброс p10–p90</span></div></div>`;
+  return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Осадки по дням, √-шкала">
+    ${grid}
+    <line x1="${pad}" y1="${base}" x2="${W-pad}" y2="${base}" stroke="var(--hair2)"></line>
+    ${bars}${wsk}${lbl}${xl}</svg>
+    <div class="cl"><span><i class="sw" style="background:var(--precip)"></i>p50, мм/сут · √-шкала</span>
+    <span><i class="sw" style="background:var(--ink3)"></i>разброс: в лучшем → в худшем случае</span></div></div>`;
 }
 
 function relBlock(d){
@@ -320,7 +337,7 @@ function relBlock(d){
   return `<div class="rel"><h4>📊 Надёжность <span class="tiny" style="font-weight:400">— предварительно</span></h4>
     <div class="relrow">${chips}</div>
     <div class="relmeta">${cover} · согласованность на 3-й день: <b>${sw}</b> разброс (${g(spread)} мм).
-    Чем шире полоса p10–p90 — тем ниже надёжность.</div>
+    Чем шире разрыв «в лучшем — в худшем случае» (p10–p90), тем ниже надёжность.</div>
     <div class="note">Оценка по разбросу моделей. <b>Калиброванный скор</b> (совпадение с фактом
     на истории) — Фаза 2.</div></div>`;
 }
@@ -333,7 +350,8 @@ async function loadForecast(id){
     const upd=new Date(d.computed_at);
     const leg=`<div class="dayleg">
       <span><b>%</b> — вероятность осадков</span>
-      <span><i class="dd bg-a"></i> точка — надёжность прогноза (разброс моделей)</span></div>`;
+      <span><i class="dd bg-a"></i> точка — надёжность прогноза (разброс моделей)</span>
+      <span>в скобках — <b>в лучшем случае</b> (меньше дождя) … <b>в худшем</b> (больше)</span></div>`;
     const rows=d.days.map(x=>{
       const lvl=confLevel(x, x.n_models);
       const nm = x.n_models<5 ? ` · <span class="tiny">${x.n_models}/5 моделей</span>` : '';
@@ -398,7 +416,7 @@ function hourlyChart(h){
       ? `Сухое окно: ближайшие <b>${dryHrs} ч</b>.`
       : `Осадки уже идут.`;
     return `${svg}
-      <div class="note" style="margin-top:10px">${summary} Пунктир — вероятность осадков, полоса — разброс p10–p90 по моделям.</div>`;
+      <div class="note" style="margin-top:10px">${summary} Пунктир — вероятность осадков, полоса — разброс от лучшего к худшему случаю по моделям (p10–p90).</div>`;
 }
 async function hydrateHourly(id){
   const box=document.getElementById('secHourly'); if(!box) return;
@@ -421,14 +439,19 @@ function historyHeatmap(h){
     const n=h.issues.length;
     if(!n) return `<div class="note">История пуста — накопится за несколько циклов (каждые 4 ч).</div>`;
     const gtc=`grid-template-columns:repeat(${n},1fr)`;
+    // Нормировка ПО СТРОКЕ (дню), а не по глобальному максимуму: цвет показывает
+    // эволюцию прогноза именно для этой даты, и один ливневый день не «засвечивает»
+    // остальные. FLOOR — дно шкалы, чтобы сухие строки не краснели от миллиметрового шума.
+    const FLOOR=6;
     const body=h.rows.map(r=>{
-      const cells=r.vals.map(v=>`<i style="background:${heatColor(v,h.max)}" title="${v==null?'—':Math.round(v*10)/10+' мм'}"></i>`).join('');
+      const rmax=Math.max(FLOOR,...r.vals.filter(v=>v!=null));
+      const cells=r.vals.map(v=>`<i style="background:${heatColor(v,rmax)}" title="${v==null?'—':Math.round(v*10)/10+' мм'}"></i>`).join('');
       return `<div class="hmrow"><span class="yl">${dm(r.date)}</span><div class="cells" style="${gtc}">${cells}</div></div>`;
     }).join('');
     const fmtIssue=iso=>{const d=new Date(iso);return String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')};
-    return `<div class="muted" style="font-size:11px;margin:0 2px 10px">Строки — прогнозируемая дата, столбцы — момент выпуска прогноза (${n}). Цвет — осадки p50.</div>
+    return `<div class="muted" style="font-size:11px;margin:0 2px 10px">Строки — прогнозируемая дата, столбцы — момент выпуска прогноза (${n}). Цвет — осадки p50 относительно этого же дня: у каждой строки своя шкала, чтобы видеть, как менялся прогноз именно на эту дату.</div>
       <div class="hm">${body}<div class="hm-x"><span>${fmtIssue(h.issues[0])}</span><span>${n>1?fmtIssue(h.issues[n-1]):''} →</span></div>
-        <div class="scale"><span>сухо</span><div class="grad"></div><span>ливень</span></div></div>
+        <div class="scale"><span>меньше</span><div class="grad"></div><span>больше</span></div></div>
       <div class="note" style="margin-top:10px">Стабильные столбцы справа — прогноз «устаканился». Скачки — модели меняли мнение. Накапливается автоматически каждые 4 часа.</div>`;
 }
 async function hydrateHistory(id){
