@@ -163,7 +163,7 @@ HTML = r'''<!doctype html>
   .hm-x{font-size:9px;color:var(--ink3);display:flex;justify-content:space-between;margin:6px 0 0 44px}
   .scale{display:flex;align-items:center;gap:7px;font-size:9.5px;color:var(--ink2);margin-top:10px}
   .scale .grad{flex:1;height:7px;border-radius:4px;
-    background:linear-gradient(90deg,var(--surface3),color-mix(in srgb,var(--precip) 40%,var(--surface3)),var(--precip))}
+    background:linear-gradient(90deg,var(--g),var(--a),var(--o),var(--r))}
   .state{text-align:center;color:var(--ink2);padding:40px 12px;font-size:14px}
   .back{background:none;border:0;color:var(--brand);font:inherit;font-size:14px;font-weight:600;
     padding:6px 0;cursor:pointer;margin-bottom:4px}
@@ -401,8 +401,12 @@ async function hydrateHourly(id){
 
 function heatColor(v,mx){
   if(v==null) return 'var(--surface3)';
-  const pct=Math.round(Math.min(v,mx)/(mx||1)*100);
-  return `color-mix(in srgb,var(--precip) ${pct}%,var(--surface3))`;
+  // green (dry) -> amber -> orange -> red (downpour)
+  const t=Math.min(v,mx)/(mx||1);
+  const stops=['var(--g)','var(--a)','var(--o)','var(--r)'];
+  const seg=t*(stops.length-1), i=Math.min(Math.floor(seg),stops.length-2);
+  const f=Math.round((seg-i)*100);
+  return `color-mix(in srgb,${stops[i+1]} ${f}%,${stops[i]})`;
 }
 function historyHeatmap(h){
     const n=h.issues.length;
