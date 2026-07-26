@@ -63,9 +63,14 @@ class OpenMeteoProvider:
         lon: float,
         elevation_m: int,
         model_ids: Sequence[str],
-        forecast_days: int = 2,
+        forecast_days: int = 3,
     ) -> list[dict]:
-        """Часовые ряды осадков по моделям (для метеограммы, US-FC-2)."""
+        """Часовые ряды осадков по моделям (для метеограммы, US-FC-2).
+
+        Open-Meteo отдаёт часы от 00:00 UTC текущих суток, поэтому для окна
+        «48 часов от текущего часа» нужны трое суток: двух хватало бы только
+        в полночь UTC. Обрезку до окна делает `compute_hourly`.
+        """
         params = {
             "latitude": lat,
             "longitude": lon,

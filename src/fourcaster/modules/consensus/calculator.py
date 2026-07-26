@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime
 
 import numpy as np
 
@@ -40,11 +40,37 @@ def weighted_percentile(
     return float(np.interp(q, cum, v))
 
 
-def compute_hourly(series: list[dict], *, max_hours: int = 48) -> dict:
+def _first_future_hour(times: list[str], now: datetime) -> int:
+    """Индекс первого часа ряда, который ещё не прошёл (текущий час включительно).
+
+    Метки времени Open-Meteo — наивный ISO в UTC (`timezone=UTC`), напр.
+    `2026-07-26T14:00`. Если ряд целиком в прошлом — возвращаем его длину
+    (окно окажется пустым, UI покажет «нет данных»), если целиком в будущем — 0.
+    """
+    cur = now.astimezone(UTC).replace(minute=0, second=0, microsecond=0, tzinfo=None)
+    for i, t in enumerate(times):
+        try:
+            ts = datetime.fromisoformat(t)
+        except ValueError:      # неожиданный формат — не режем ряд
+            return 0
+        if ts.tzinfo is not None:
+            ts = ts.astimezone(UTC).replace(tzinfo=None)
+        if ts >= cur:
+            return i
+    return len(times)
+
+
+def compute_hourly(
+    series: list[dict], *, max_hours: int = 48, now: datetime | None = None
+) -> dict:
     """Часовой консенсус осадков по моделям для метеограммы (US-FC-2).
 
     series — сырые часовые ряды из Open-Meteo: [{model_openmeteo_id, times,
     precip, pop}]. Возвращает выровненные массивы p10/p50/p90 и POP по часам.
+
+    Окно — ровно `max_hours` часов **от текущего часа UTC**, а не от начала
+    суток: провайдер отдаёт ряд с 00:00 UTC, и без обрезки «48 часов» молча
+    превращались бы в «до конца завтрашнего дня». Прошедшие часы отбрасываются.
     """
     from fourcaster.modules.consensus.models import BY_OPENMETEO_ID
 
@@ -52,14 +78,18 @@ def compute_hourly(series: list[dict], *, max_hours: int = 48) -> dict:
     if not known:
         return {"times": [], "p10": [], "p50": [], "p90": [], "pop": []}
 
-    n = min(max_hours, min(len(s["times"]) for s in known))
-    times = known[0]["times"][:n]
+    ref = known[0]["times"]
+    start = _first_future_hour(ref, now or datetime.now(UTC))
+    total = min(len(s["times"]) for s in known)
+    n = min(max_hours, max(0, total - start))
+    times = ref[start:start + n]
     weights_all = np.asarray(
         [BY_OPENMETEO_ID[s["model_openmeteo_id"]].weight for s in known], dtype=float
     )
 
     p10, p50, p90, pop = [], [], [], []
-    for i in range(n):
+    for k in range(n):
+        i = start + k
         vals = np.asarray([s["precip"][i] for s in known], dtype=float)
         w = weights_all / weights_all.sum()
         p10.append(round(weighted_percentile(vals, w, 0.10), 2))
