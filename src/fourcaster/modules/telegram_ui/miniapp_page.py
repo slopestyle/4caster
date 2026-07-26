@@ -171,7 +171,9 @@ HTML = r'''<!doctype html>
     background-size:200% 100%;animation:sh 1.2s infinite;margin-bottom:10px}
   @keyframes sh{to{background-position:-200% 0}}
   @media (prefers-reduced-motion:reduce){.skel{animation:none}}
-  .foot{color:var(--ink3);font-size:10.5px;text-align:center;margin-top:18px;line-height:1.5}
+  .foot{color:var(--ink3);font-size:10.5px;text-align:center;margin-top:18px;line-height:1.7}
+  .foot a{color:var(--ink2);text-decoration:none;border-bottom:1px solid var(--hair2)}
+  .foot a:active{color:var(--brand)}
 </style>
 </head>
 <body>
@@ -185,7 +187,14 @@ HTML = r'''<!doctype html>
     <button data-t="compare">Сравнить</button>
   </div>
   <div id="view"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
-  <div class="foot">Данные: Open-Meteo · ECMWF · DWD · NOAA · ECCC · Météo-France (CC BY 4.0)</div>
+  <div class="foot">Данные:
+    <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a> ·
+    <a href="https://www.ecmwf.int" target="_blank" rel="noopener">ECMWF</a> ·
+    <a href="https://www.dwd.de" target="_blank" rel="noopener">DWD</a> ·
+    <a href="https://www.noaa.gov" target="_blank" rel="noopener">NOAA</a> ·
+    <a href="https://weather.gc.ca" target="_blank" rel="noopener">ECCC</a> ·
+    <a href="https://meteofrance.com" target="_blank" rel="noopener">Météo-France</a>
+    (CC BY 4.0)</div>
 </div>
 <script>
 const tg = window.Telegram && window.Telegram.WebApp;
