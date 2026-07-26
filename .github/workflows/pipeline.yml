@@ -1,0 +1,46 @@
+name: Forecast pipeline
+
+# Конвейер сбора/консенсуса по циклам PRD §11.5 (6 прогонов/сутки, UTC).
+# Заменяет APScheduler на VM (ADR-0013). Пока — vertical slice: живой запрос
+# к Open-Meteo и рендер карточек в артефакт. По мере роста сюда добавятся
+# запись в Supabase Postgres и push-уведомления в Telegram.
+
+on:
+  schedule:
+    - cron: "0 2,6,10,14,18,22 * * *"  # 02/06/10/14/18/22 UTC (§11.5)
+  workflow_dispatch:
+    inputs:
+      locations:
+        description: "ID локаций через пробел"
+        default: "achishkho aibga"
+
+concurrency:
+  group: forecast-pipeline
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONIOENCODING: "utf-8"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install -e .
+      - name: Run pipeline (Open-Meteo → консенсус → карточки → БД)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          SAVE=""
+          if [ -n "$DATABASE_URL" ]; then SAVE="--save"; fi
+          python -m fourcaster.cli ${{ github.event.inputs.locations || 'achishkho aibga' }} $SAVE \
+            | tee cards.txt
+      - name: Upload cards artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: forecast-cards
+          path: cards.txt
+          retention-days: 7

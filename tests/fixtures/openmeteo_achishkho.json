@@ -1,0 +1,123 @@
+{
+ "latitude": 43.75,
+ "longitude": 40.25,
+ "generationtime_ms": 0.18525123596191406,
+ "utc_offset_seconds": 0,
+ "timezone": "GMT",
+ "timezone_abbreviation": "GMT",
+ "elevation": 2391.0,
+ "daily_units": {
+  "time": "iso8601",
+  "precipitation_sum_ecmwf_ifs025": "mm",
+  "precipitation_probability_max_ecmwf_ifs025": "%",
+  "precipitation_sum_icon_global": "mm",
+  "precipitation_probability_max_icon_global": "%",
+  "precipitation_sum_gfs_global": "mm",
+  "precipitation_probability_max_gfs_global": "%",
+  "precipitation_sum_gem_global": "mm",
+  "precipitation_probability_max_gem_global": "%",
+  "precipitation_sum_meteofrance_arpege_world": "mm",
+  "precipitation_probability_max_meteofrance_arpege_world": "undefined"
+ },
+ "daily": {
+  "time": [
+   "2026-07-25",
+   "2026-07-26",
+   "2026-07-27",
+   "2026-07-28",
+   "2026-07-29",
+   "2026-07-30",
+   "2026-07-31"
+  ],
+  "precipitation_sum_ecmwf_ifs025": [
+   14.9,
+   58.6,
+   5.4,
+   0.7,
+   3.2,
+   0.7,
+   4.0
+  ],
+  "precipitation_probability_max_ecmwf_ifs025": [
+   100,
+   100,
+   75,
+   55,
+   75,
+   56,
+   76
+  ],
+  "precipitation_sum_icon_global": [
+   28.1,
+   17.3,
+   0.7,
+   0.0,
+   0.0,
+   0.0,
+   0.0
+  ],
+  "precipitation_probability_max_icon_global": [
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null
+  ],
+  "precipitation_sum_gfs_global": [
+   23.2,
+   72.8,
+   0.1,
+   0.0,
+   1.1,
+   1.5,
+   3.0
+  ],
+  "precipitation_probability_max_gfs_global": [
+   100,
+   100,
+   69,
+   56,
+   87,
+   64,
+   68
+  ],
+  "precipitation_sum_gem_global": [
+   20.2,
+   46.1,
+   0.0,
+   0.8,
+   0.4,
+   0.0,
+   0.3
+  ],
+  "precipitation_probability_max_gem_global": [
+   99,
+   100,
+   29,
+   11,
+   11,
+   10,
+   11
+  ],
+  "precipitation_sum_meteofrance_arpege_world": [
+   11.3,
+   44.5,
+   0.1,
+   0.6,
+   null,
+   null,
+   null
+  ],
+  "precipitation_probability_max_meteofrance_arpege_world": [
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null
+  ]
+ }
+}

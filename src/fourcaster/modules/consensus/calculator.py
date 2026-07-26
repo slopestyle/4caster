@@ -1,0 +1,88 @@
+"""Расчёт консенсуса: взвешенные перцентили + POP (PRD §10.5).
+
+Для каждого валидного дня строится взвешенный пул членов (по одному
+члену на модель в срезе) и считаются перцентили p10/p50/p90 и
+вероятность осадков POP. Сумма нормированных весов = 1.0 (INV-3);
+каждая модель учтена один раз (INV-4).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import date
+
+import numpy as np
+
+from fourcaster.modules.forecasting.normalize import ModelSnapshot
+
+
+@dataclass(frozen=True, slots=True)
+class DayConsensus:
+    day: date
+    p10: float
+    p50: float
+    p90: float
+    pop: float           # вероятность осадков > 0.1 мм, 0..1
+    n_models: int        # сколько моделей участвовало в дне
+
+
+def weighted_percentile(
+    values: np.ndarray, weights: np.ndarray, q: float
+) -> float:
+    """Взвешенный перцентиль q∈[0,1] методом линейной интерполяции по
+    накопленному нормированному весу."""
+
+    order = np.argsort(values)
+    v = values[order]
+    w = weights[order]
+    cum = np.cumsum(w) - 0.5 * w
+    cum /= w.sum()
+    return float(np.interp(q, cum, v))
+
+
+def compute_consensus(
+    snapshots: list[ModelSnapshot], *, max_days: int
+) -> list[DayConsensus]:
+    if not snapshots:
+        return []
+
+    # общий календарь дней (пересечение по позиции — ряды выровнены по UTC)
+    n_days = min(max_days, min(len(s.dates) for s in snapshots))
+    ref_dates = snapshots[0].dates
+
+    result: list[DayConsensus] = []
+    for i in range(n_days):
+        vals: list[float] = []
+        wts: list[float] = []
+        probs: list[float] = []
+        prob_wts: list[float] = []
+        for s in snapshots:
+            vals.append(s.precip_total_mm[i])
+            wts.append(s.model.weight)
+            p = s.precip_probability[i]
+            if p is not None:
+                probs.append(p)
+                prob_wts.append(s.model.weight)
+
+        values = np.asarray(vals, dtype=float)
+        weights = np.asarray(wts, dtype=float)
+        weights = weights / weights.sum()  # нормировка (INV-3)
+
+        if probs:
+            pw = np.asarray(prob_wts, dtype=float)
+            pop = float(np.average(probs, weights=pw))
+        else:
+            # запасной POP: доля веса моделей, давших > 0.1 мм
+            pop = float(weights[values > 0.1].sum())
+
+        result.append(
+            DayConsensus(
+                day=ref_dates[i],
+                p10=round(weighted_percentile(values, weights, 0.10), 1),
+                p50=round(weighted_percentile(values, weights, 0.50), 1),
+                p90=round(weighted_percentile(values, weights, 0.90), 1),
+                pop=round(pop, 2),
+                n_models=len(snapshots),
+            )
+        )
+    return result
