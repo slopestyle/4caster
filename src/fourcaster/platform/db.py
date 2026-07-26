@@ -9,17 +9,23 @@ from __future__ import annotations
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import NullPool
 
 from fourcaster.platform.config import database_url
 
 
-def make_engine(url: str | None = None) -> Engine:
-    return create_engine(
-        url or database_url(),
-        pool_pre_ping=True,
+def make_engine(url: str | None = None, *, nullpool: bool = False) -> Engine:
+    """Фабрика движка. В serverless-функции бота используйте nullpool=True —
+    процесс «замораживается» между запросами, держать пул соединений нельзя."""
+    kwargs: dict = {
+        "pool_pre_ping": True,
         # pgbouncer transaction mode: без server-side prepared statements
-        connect_args={"prepare_threshold": None},
-    )
+        "connect_args": {"prepare_threshold": None},
+    }
+    if nullpool:
+        kwargs["poolclass"] = NullPool
+        kwargs.pop("pool_pre_ping")
+    return create_engine(url or database_url(), **kwargs)
 
 
 SessionFactory = sessionmaker

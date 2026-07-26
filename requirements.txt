@@ -1,0 +1,8 @@
+# Зависимости рантайма бота для Vercel (Vercel Python читает requirements.txt).
+# Каноничный список — в pyproject.toml; здесь только то, что нужно webhook-функции.
+aiogram>=3.4
+fastapi>=0.110
+sqlalchemy>=2.0
+psycopg[binary]>=3.1
+python-dotenv>=1.0
+numpy>=1.26

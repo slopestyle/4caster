@@ -39,6 +39,18 @@ def database_url_direct() -> str:
     return database_url().replace(":6543/", ":5432/")
 
 
+def telegram_token() -> str:
+    t = os.environ.get("TELEGRAM_BOT_TOKEN")
+    if not t:
+        raise RuntimeError("TELEGRAM_BOT_TOKEN не задан (см. .env.example)")
+    return t
+
+
+def telegram_webhook_secret() -> str | None:
+    """Секрет заголовка X-Telegram-Bot-Api-Secret-Token (FR-TG-1). Опционален."""
+    return os.environ.get("TELEGRAM_WEBHOOK_SECRET") or None
+
+
 def safe_dsn(url: str) -> str:
     """Строка подключения без пароля — безопасна для логов."""
     parts = urlsplit(url)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Engine
 
@@ -48,3 +49,12 @@ def upsert_card(
     )
     with engine.begin() as conn:
         conn.execute(stmt)
+
+
+def get_card(engine: Engine, location_id: str) -> str | None:
+    """Готовый текст карточки из кэша (FR-TG-7: ответ бота из read-модели)."""
+    stmt = select(ForecastCardCache.rendered_text).where(
+        ForecastCardCache.location_id == location_id
+    )
+    with engine.connect() as conn:
+        return conn.execute(stmt).scalar_one_or_none()

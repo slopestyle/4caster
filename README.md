@@ -52,6 +52,24 @@ src/fourcaster/
 - **БД** — Supabase/Neon Postgres (по мере роста). **Бот** — Vercel/Deno webhook.
 - **CI** — [ci.yml](.github/workflows/ci.yml): `pytest` на каждый push/PR.
 
+## Telegram-бот
+
+Webhook на Vercel (Python, aiogram 3), читает готовые карточки из
+`forecast_card_cache` (FR-TG-7). Команды: `/start`, `/forecast [id]`,
+`/locations` + инлайн-кнопки локаций. Код: [modules/telegram_ui/](src/fourcaster/modules/telegram_ui/),
+ASGI-обёртка [webapp.py](src/fourcaster/modules/telegram_ui/webapp.py),
+точка входа Vercel [api/telegram.py](api/telegram.py).
+
+Деплой:
+1. Импортировать репозиторий в Vercel (регистрация без карты).
+2. В Vercel → Settings → Environment Variables задать `DATABASE_URL`
+   (pooler :6543), `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`.
+3. После деплоя привязать webhook:
+   ```bash
+   python scripts/telegram_webhook.py set https://<app>.vercel.app/api/telegram
+   python scripts/telegram_webhook.py info
+   ```
+
 ## Атрибуция
 
 Источники (CC BY 4.0): данные Open-Meteo и первоисточников —
