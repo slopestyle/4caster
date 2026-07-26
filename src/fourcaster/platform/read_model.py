@@ -206,9 +206,12 @@ def list_cards(engine: Engine) -> dict[str, dict]:
         rows = conn.execute(stmt).all()
     out: dict[str, dict] = {}
     for r in rows:
+        cons = r.consensus or []
         out[r.location_id] = {
             "computed_at": r.computed_at.isoformat(),
-            "today": (r.consensus[0] if r.consensus else None),
-            "n_models": (r.consensus[0]["n_models"] if r.consensus else 0),
+            "today": (cons[0] if cons else None),
+            "days": cons[:8],  # для мультидневной полосы на карточке
+            "days_total": len(cons),
+            "n_models": (cons[0]["n_models"] if cons else 0),
         }
     return out

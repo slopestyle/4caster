@@ -67,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="fourcaster", description="4CASTER slice")
     parser.add_argument("locations", nargs="*", default=["achishkho", "aibga"],
                         help="ID локаций (по умолчанию: achishkho aibga)")
-    parser.add_argument("-d", "--days", type=int, default=7, help="Горизонт, суток")
+    parser.add_argument("-d", "--days", type=int, default=14, help="Горизонт, суток")
     parser.add_argument("--offline", action="store_true",
                         help="Использовать записанную фикстуру вместо сети")
     parser.add_argument("--save", action="store_true",

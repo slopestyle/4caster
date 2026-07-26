@@ -104,7 +104,19 @@ HTML = r'''<!doctype html>
     background:linear-gradient(90deg,color-mix(in srgb,var(--precip) 25%,transparent),var(--precip))}
   .p50{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--ink);border-radius:2px;
     box-shadow:0 0 0 2px var(--surface)}
-  .pop{font-size:12px;text-align:right;color:var(--ink2);font-weight:600;font-variant-numeric:tabular-nums}
+  .pop{font-size:12px;color:var(--ink2);font-weight:600;font-variant-numeric:tabular-nums;
+    display:flex;flex-direction:column;align-items:flex-end;gap:3px}
+  .dd{width:8px;height:8px;border-radius:50%}
+  /* multi-day strip on location cards */
+  .strip{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:11px}
+  .dcell{text-align:center;padding:5px 0 4px;border-radius:9px;background:var(--surface2)}
+  .dcell.dry{background:var(--brand-wash);outline:1px solid var(--brand)}
+  .dcell .wd{font-size:9px;color:var(--ink3);font-weight:700}
+  .dcell .di{font-size:15px;line-height:1.3}
+  .dcell .dd{margin:2px auto 0}
+  .dcell .mm{font-size:8.5px;color:var(--ink3);font-variant-numeric:tabular-nums}
+  .hint{font-size:10.5px;color:var(--ink3);margin:0 2px 10px;display:flex;gap:12px;flex-wrap:wrap}
+  .hint span{display:inline-flex;gap:5px;align-items:center}
 
   /* reliability (spread-based, qualitative) */
   .rel{background:var(--surface);border:1px solid var(--hair);border-radius:16px;padding:13px 14px;margin-bottom:10px}
@@ -201,6 +213,20 @@ function confLevel(d,n){
   if(n<4) lvl=Math.min(3,lvl+1);
   return lvl;
 }
+function dayStrip(days){
+  if(!days.length) return '';
+  const up=days.slice(0,7);
+  let driest=-1, best=1e9;
+  up.forEach((d,i)=>{ if(i>0 && d.p50<best){ best=d.p50; driest=i; } });
+  const cells=up.map((d,i)=>{
+    const lvl=confLevel(d,d.n_models);
+    const dry=(i===driest && best<2);
+    return `<div class="dcell ${dry?'dry':''}"><div class="wd">${wd(d.day)}</div>
+      <div class="di">${HIL_IC[d.hil_level]}</div><div class="mm">${g(d.p50)}</div>
+      <div class="dd ${CB[lvl]}"></div></div>`;
+  }).join('');
+  return `<div class="strip">${cells}</div>`;
+}
 const view=document.getElementById('view');
 let CACHE={};
 
@@ -217,14 +243,20 @@ async function loadHome(){
   view.innerHTML='<div class="skel"></div><div class="skel"></div>';
   try{
     const d=await api('/api/locations'); CACHE.locs=d.locations;
-    view.innerHTML=d.locations.map(l=>{
+    const hint=`<div class="hint"><span><i class="dd bg-g"></i>надёжнее</span>
+      <span><i class="dd bg-a"></i>осторожно</span><span><i class="dd bg-o"></i>низкая</span>
+      <span>рамка — сухой день</span></div>`;
+    view.innerHTML=hint+d.locations.map(l=>{
       const t=l.today;
-      const right=t?`<span class="band-num"><b>${g(t.p50)}</b> <u>(${g(t.p10)}–${g(t.p90)})</u> мм</span>`:'<span class="tiny">нет данных</span>';
-      const ic=t?HIL_IC[t.hil_level]:'·';
-      const pop=t?`<span class="pill">${Math.round(t.pop*100)}%</span>`:'';
+      if(!t) return `<button class="card" onclick="loadForecast('${l.id}')">
+        <div class="loc">${l.name}</div><div class="tiny">${l.elevation_m} м · нет данных</div></button>`;
+      const today=`<span class="band-num">сегодня <b>${g(t.p50)}</b> <u>(${g(t.p10)}–${g(t.p90)})</u> мм · ${Math.round(t.pop*100)}%</span>`;
       return `<button class="card" onclick="loadForecast('${l.id}')">
-        <div class="row"><div><div class="loc">${ic} ${l.name}</div><div class="tiny">${l.elevation_m} м · ${l.cluster}</div></div>${pop}</div>
-        <div class="row" style="margin-top:8px">${right}<span class="tiny">подробнее →</span></div></button>`;
+        <div class="row"><div><div class="loc">${HIL_IC[t.hil_level]} ${l.name}</div>
+          <div class="tiny">${l.elevation_m} м · ${l.cluster}</div></div>
+          <span class="pill ok">${l.days_total||(l.days||[]).length} дн →</span></div>
+        <div style="margin-top:8px">${today}</div>
+        ${dayStrip(l.days||[])}</button>`;
     }).join('')||'<div class="state">Пока нет локаций.</div>';
   }catch(e){view.innerHTML='<div class="state">Не удалось загрузить.</div>'}
 }
@@ -274,11 +306,15 @@ async function loadForecast(id){
   try{
     const d=await api('/api/forecast?location='+encodeURIComponent(id));
     const upd=new Date(d.computed_at);
-    const rows=d.days.map(x=>`<div class="day">
+    const rows=d.days.map(x=>{
+      const lvl=confLevel(x, x.n_models);
+      const nm = x.n_models<5 ? ` · <span class="tiny">${x.n_models}/5 моделей</span>` : '';
+      return `<div class="day">
       <div class="dt">${dm(x.day)}<small>${wd(x.day)}</small></div>
       <div class="ic">${HIL_IC[x.hil_level]}</div>
-      <div class="bw"><span class="band-num"><b>${g(x.p50)}</b> <u>(${g(x.p10)}–${g(x.p90)})</u> мм · ${x.hil_label}</span>${band(x)}</div>
-      <div class="pop">${Math.round(x.pop*100)}%</div></div>`).join('');
+      <div class="bw"><span class="band-num"><b>${g(x.p50)}</b> <u>(${g(x.p10)}–${g(x.p90)})</u> мм · ${x.hil_label}${nm}</span>${band(x)}</div>
+      <div class="pop">${Math.round(x.pop*100)}%<div class="dd ${CB[lvl]}"></div></div></div>`;
+    }).join('');
     view.innerHTML=`<button class="back" onclick="loadHome()">‹ Все точки</button>
       <div class="dhead"><div class="loc">${d.location.name}</div><div class="tiny">${d.location.elevation_m} м</div></div>
       <div class="row" style="margin:0 2px 10px"><span class="pill ok">Consensus ${d.n_models}/5</span>

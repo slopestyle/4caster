@@ -19,20 +19,23 @@ from fourcaster.shared_kernel.variables import PRECIP_PROBABILITY, PRECIP_TOTAL
 @dataclass(frozen=True, slots=True)
 class ModelSnapshot:
     """Нормализованный посуточный прогноз одной модели (упрощённый
-    ForecastSnapshot, §9.1). Иммутабелен (INV-1)."""
+    ForecastSnapshot, §9.1). Иммутабелен (INV-1).
+
+    `None` в осадках означает «модель не покрывает этот день» (за горизонтом
+    выпуска) — это НЕ ноль. Такой день исключается из консенсуса модели."""
 
     model: ForecastModel
     dates: tuple[date, ...]
-    precip_total_mm: tuple[float, ...]      # осадки за сутки, мм (accumulated)
+    precip_total_mm: tuple[float | None, ...]     # осадки за сутки, мм (accumulated)
     precip_probability: tuple[float | None, ...]  # 0..1 (instant)
 
 
-def _clamp_precip(value: float | None) -> float:
+def _clean_precip(value: float | None) -> float | None:
     if value is None:
-        return 0.0
+        return None  # модель не даёт значения на этот день — не подменяем нулём
     lo, hi = PRECIP_TOTAL.valid_range
     if not (lo <= value <= hi):
-        return 0.0  # выброс отбрасывается (FR-NORM-2)
+        return None  # выброс отбрасывается (FR-NORM-2)
     return float(value)
 
 
@@ -51,6 +54,6 @@ def normalize(series: RawModelSeries) -> ModelSnapshot | None:
     return ModelSnapshot(
         model=model,
         dates=series.dates,
-        precip_total_mm=tuple(_clamp_precip(v) for v in series.precip_total_mm),
+        precip_total_mm=tuple(_clean_precip(v) for v in series.precip_total_mm),
         precip_probability=tuple(_norm_prob(v) for v in series.precip_probability_pct),
     )

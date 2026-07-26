@@ -96,12 +96,18 @@ def compute_consensus(
         probs: list[float] = []
         prob_wts: list[float] = []
         for s in snapshots:
-            vals.append(s.precip_total_mm[i])
+            v = s.precip_total_mm[i]
+            if v is None:
+                continue  # модель не покрывает этот день — вне пула
+            vals.append(v)
             wts.append(s.model.weight)
             p = s.precip_probability[i]
             if p is not None:
                 probs.append(p)
                 prob_wts.append(s.model.weight)
+
+        if not vals:
+            continue  # день не покрыт ни одной моделью — горизонт закончился
 
         values = np.asarray(vals, dtype=float)
         weights = np.asarray(wts, dtype=float)
@@ -121,7 +127,7 @@ def compute_consensus(
                 p50=round(weighted_percentile(values, weights, 0.50), 1),
                 p90=round(weighted_percentile(values, weights, 0.90), 1),
                 pop=round(pop, 2),
-                n_models=len(snapshots),
+                n_models=len(vals),
             )
         )
     return result

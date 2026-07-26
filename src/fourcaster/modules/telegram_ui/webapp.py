@@ -75,6 +75,8 @@ async def api_locations() -> dict:
             "elevation_m": loc.elevation_m, "cluster": loc.cluster,
             "computed_at": c["computed_at"] if c else None,
             "today": c["today"] if c else None,
+            "days": c["days"] if c else [],
+            "days_total": c["days_total"] if c else 0,
             "n_models": c["n_models"] if c else 0,
         })
     return {"locations": locations}
