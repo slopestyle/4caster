@@ -82,10 +82,15 @@ def main(argv: list[str] | None = None) -> int:
             pass
 
     engine = None
+    token = None
     if args.save:
         from fourcaster.platform.db import make_engine
-        from fourcaster.platform.read_model import insert_history, upsert_card
         engine = make_engine()
+        try:
+            from fourcaster.platform.config import telegram_token
+            token = telegram_token()
+        except Exception:  # noqa: BLE001 — без токена просто не рассылаем
+            token = None
 
     for i, loc_id in enumerate(args.locations):
         try:
@@ -99,11 +104,25 @@ def main(argv: list[str] | None = None) -> int:
             print("\n" + "─" * 44 + "\n")
         print(card)
         if engine is not None:
+            from fourcaster.modules.changedetection import detect_changes
+            from fourcaster.modules.notification import send_alerts
+            from fourcaster.platform.read_model import (
+                get_previous_snapshot, insert_history, subscribers_for, upsert_card,
+            )
+            previous = get_previous_snapshot(engine, location.id)
             upsert_card(engine, location_id=location.id, computed_at=computed_at,
                         days=consensus, rendered_text=card)
             insert_history(engine, location_id=location.id, issued_at=computed_at,
                            days=consensus)
             print(f"→ сохранено в БД: {location.id}", file=sys.stderr)
+
+            changes = detect_changes(previous, consensus)
+            if changes and token:
+                chat_ids = subscribers_for(engine, location.id)
+                n = send_alerts(token=token, chat_ids=chat_ids,
+                                location_name=location.name, changes=changes)
+                print(f"→ алертов отправлено ({location.id}): {n} "
+                      f"по {len(changes)} изменениям", file=sys.stderr)
     return 0
 
 

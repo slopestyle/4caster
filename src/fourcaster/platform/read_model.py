@@ -6,13 +6,17 @@ from datetime import datetime
 
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Engine
 
 from fourcaster.modules.consensus.calculator import DayConsensus
 from fourcaster.modules.hazard.rain import classify_hil
-from fourcaster.platform.models import ForecastCardCache, ForecastHistory
+from fourcaster.platform.models import (
+    ForecastCardCache,
+    ForecastHistory,
+    Subscription,
+)
 
 
 def _consensus_to_json(days: list[DayConsensus]) -> list[dict]:
@@ -134,6 +138,61 @@ def get_history(engine: Engine, location_id: str, *, max_issues: int = 14) -> di
         "rows": rows,
         "max": max_p50,
     }
+
+
+def get_previous_snapshot(engine: Engine, location_id: str) -> dict:
+    """Последний записанный прогон (для сравнения с новым): {valid_date_iso: {...}}."""
+    from sqlalchemy import func
+    sub = (
+        select(func.max(ForecastHistory.issued_at))
+        .where(ForecastHistory.location_id == location_id)
+        .scalar_subquery()
+    )
+    stmt = select(
+        ForecastHistory.valid_date, ForecastHistory.p50,
+        ForecastHistory.pop, ForecastHistory.hil_level,
+    ).where(
+        ForecastHistory.location_id == location_id,
+        ForecastHistory.issued_at == sub,
+    )
+    with engine.connect() as conn:
+        rows = conn.execute(stmt).all()
+    return {
+        r.valid_date.isoformat(): {"p50": r.p50, "pop": r.pop, "hil_level": r.hil_level}
+        for r in rows
+    }
+
+
+# ---- подписки (US-SUB-1) ----
+
+def subscribe(engine: Engine, chat_id: int, location_id: str) -> None:
+    stmt = insert(Subscription).values(
+        chat_id=chat_id, location_id=location_id
+    ).on_conflict_do_nothing(
+        index_elements=[Subscription.chat_id, Subscription.location_id]
+    )
+    with engine.begin() as conn:
+        conn.execute(stmt)
+
+
+def unsubscribe(engine: Engine, chat_id: int, location_id: str) -> None:
+    stmt = delete(Subscription).where(
+        Subscription.chat_id == chat_id, Subscription.location_id == location_id
+    )
+    with engine.begin() as conn:
+        conn.execute(stmt)
+
+
+def list_subscriptions(engine: Engine, chat_id: int) -> list[str]:
+    stmt = select(Subscription.location_id).where(Subscription.chat_id == chat_id)
+    with engine.connect() as conn:
+        return [r[0] for r in conn.execute(stmt).all()]
+
+
+def subscribers_for(engine: Engine, location_id: str) -> list[int]:
+    stmt = select(Subscription.chat_id).where(Subscription.location_id == location_id)
+    with engine.connect() as conn:
+        return [r[0] for r in conn.execute(stmt).all()]
 
 
 def list_cards(engine: Engine) -> dict[str, dict]:

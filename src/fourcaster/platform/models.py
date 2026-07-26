@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, Float, Integer, String, Text, func
+from sqlalchemy import BigInteger, Date, DateTime, Float, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -48,3 +48,15 @@ class ForecastHistory(Base):
     p90: Mapped[float] = mapped_column(Float)
     pop: Mapped[float] = mapped_column(Float)
     hil_level: Mapped[int] = mapped_column(Integer)
+
+
+class Subscription(Base):
+    """Подписка чата на изменения прогноза по локации (US-SUB-1)."""
+
+    __tablename__ = "subscription"
+
+    chat_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    location_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
