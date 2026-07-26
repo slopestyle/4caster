@@ -50,7 +50,7 @@ HTML = r'''<!doctype html>
     --g:#2f9e6a; --a:#bf8c18; --o:#e8632a; --r:#dc4433;
     --shadow:0 1px 2px rgba(20,25,35,.06),0 6px 18px rgba(20,25,35,.10);
   }
-  .card,.chart,.days,.rel,.cmp,.hm{box-shadow:var(--shadow)}
+  .card,.chart,.days,.rel,.cmp,.hm,.hero{box-shadow:var(--shadow)}
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   body{margin:0;background:var(--bg);color:var(--ink);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
@@ -144,6 +144,30 @@ HTML = r'''<!doctype html>
   .note{font-size:11px;color:var(--ink2);background:var(--surface2);border:1px dashed var(--hair);
     border-radius:12px;padding:9px 11px;margin-top:8px;line-height:1.45}
   .note b{color:var(--ink)}
+  /* раскрывающаяся плашка «как работает надёжность» */
+  .rel-how{margin-top:9px;border-top:1px solid var(--hair);padding-top:9px}
+  .rel-how>summary{cursor:pointer;font-size:11.5px;font-weight:600;color:var(--brand-ink);
+    list-style:none;display:flex;align-items:center;gap:6px}
+  .rel-how>summary::-webkit-details-marker{display:none}
+  .rel-how>summary::before{content:'▸';font-size:9px;transition:transform .15s}
+  .rel-how[open]>summary::before{transform:rotate(90deg)}
+  .rel-how .body{font-size:11px;color:var(--ink2);line-height:1.5;margin-top:9px}
+  .rel-lv{display:flex;gap:8px;align-items:flex-start;margin:6px 0}
+  .rel-lv i{width:10px;height:10px;border-radius:50%;flex:none;margin-top:3px}
+  .rel-lv b{color:var(--ink)}
+
+  /* хайкабельность — единый индикатор «идти / не идти» */
+  .hero{background:var(--surface);border:1px solid var(--hair);border-radius:16px;padding:13px 14px;margin-bottom:10px}
+  .hero h4{margin:0 0 10px;font-size:14px}
+  .hero-badges{display:flex;gap:8px}
+  .hbig{flex:1;background:var(--surface2);border:1px solid var(--hair);border-radius:12px;padding:10px 11px}
+  .hbig .m{font-size:11px;color:var(--ink2);font-weight:600}
+  .hbig .v{margin-top:6px;font-size:16px;font-weight:750;display:flex;gap:8px;align-items:center}
+  .hbig .v .dd{width:12px;height:12px}
+  .hike{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:1px}
+  .hbadge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;
+    background:var(--surface2);border:1px solid var(--hair);border-radius:8px;padding:3px 7px}
+  .hbadge em{color:var(--ink3);font-style:normal;font-weight:600;font-size:10px}
 
   /* compare table */
   .cmp{background:var(--surface);border:1px solid var(--hair);border-radius:16px;overflow:hidden}
@@ -215,6 +239,12 @@ const WD=['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
 const MAX=60;
 const CB=['bg-g','bg-a','bg-o','bg-r'], CW=['надёжно','осторожно','низкая','не опираться'];
 const GC=['g','a','o','r'];
+// расшифровка уровней для плашки «как работает надёжность» (порядок = CW/CB/GC)
+const LVL_DESC=[
+  'модели сходятся — на прогноз можно опираться',
+  'умеренный разброс — держите запас и следите за обновлениями',
+  'модели заметно расходятся — решение под вопросом',
+  'разнобой моделей — прогноз не устоялся, не планируйте по нему'];
 function modelsWord(n){const a=n%10,b=n%100;
   if(a===1&&b!==11)return'модель'; if(a>=2&&a<=4&&(b<10||b>=20))return'модели'; return'моделей';}
 const H_HOURLY='<h4 class="sec-h">🕐 Почасовой прогноз · 48 ч</h4>';
@@ -236,6 +266,48 @@ function confLevel(d,n){
   let lvl = rel<0.35?0 : rel<0.8?1 : rel<1.4?2 : 3;
   if(n<4) lvl=Math.min(3,lvl+1);
   return lvl;
+}
+// ── Хайкабельность: единый индикатор «идти / не идти» ───────────────────────
+// Свёртка трёх факторов в одну операционную категорию: критичность осадков
+// (HIL), надёжность прогноза и разброс моделей. Объединение геометрическое —
+// провал по любому фактору обрушивает итог (по мотивам PRD §10.6.2); показываем
+// категорию, а не некалиброванное число (INV-6, P2). Благоприятность дня по HIL
+// 0..5 привязана к операционному смыслу §10.4 (0 «планы не меняются» → 5
+// «отмена/эвакуация»); множитель RFAV — по уровню надёжности confLevel.
+const HFAV=[1.00,0.88,0.55,0.30,0.13,0.04];
+const RFAV=[1.00,0.82,0.58,0.40];
+const HW=['идти','можно','спорно','не идти'];       // вердикт 0..3 (цвета CB/GC)
+function hikeScore(fav,rl,wFav){ return Math.pow(fav,wFav)*Math.pow(RFAV[rl],1-wFav); }
+function hikeLevel(s){ return s>=0.72?0 : s>=0.50?1 : s>=0.30?2 : 3; }
+// однодневный поход: важен дождь именно этого дня, погода весит больше надёжности
+function hikeDay(d){
+  const fav=(HFAV[d.hil_level]??0.04);
+  return {lvl:hikeLevel(hikeScore(fav, confLevel(d,d.n_models), 0.62))};
+}
+// с ночёвкой: экспозиция на день D и день D+1 (риск мокрого лагеря). Считаем по
+// ХУДШЕМУ из двух дней — благоприятность min, надёжность по худшему дню. Так
+// ночёвка никогда не выходит «лучше» однодневки и ухудшается, только когда
+// завтра хуже сегодня. Если D+1 за горизонтом — по D, но уверенность −1 (partial).
+function hikeNight(d,nx){
+  const favD=(HFAV[d.hil_level]??0.04);
+  let fav,rl,partial=false;
+  if(nx){
+    fav=Math.min(favD,(HFAV[nx.hil_level]??0.04));
+    rl=Math.max(confLevel(d,d.n_models),confLevel(nx,nx.n_models));
+  }else{
+    fav=favD; rl=Math.min(3,confLevel(d,d.n_models)+1); partial=true;
+  }
+  return {lvl:hikeLevel(hikeScore(fav, rl, 0.62)), partial};
+}
+// крупный блок-ответ «идти в горы?» для выбранного дня (по умолчанию — сегодня)
+function hikeHero(days){
+  if(!days.length) return '';
+  const d0=days[0], hd=hikeDay(d0), hn=hikeNight(d0,days[1]);
+  const cell=(emoji,mode,v)=>`<div class="hbig"><div class="m">${emoji} ${mode}</div>
+    <div class="v"><i class="dd ${CB[v.lvl]}"></i><span class="${GC[v.lvl]}">${HW[v.lvl]}</span></div></div>`;
+  return `<div class="hero"><h4>Идти в горы? <span class="tiny" style="font-weight:400">— ${wd(d0.day)} ${dm(d0.day)}</span></h4>
+    <div class="hero-badges">${cell('🥾','однодневный',hd)}${cell('🏕','с ночёвкой',hn)}</div>
+    <div class="note" style="margin-top:10px">Единый индикатор из трёх факторов: <b>критичность осадков</b> (HIL), <b>надёжность</b> прогноза и <b>разброс</b> моделей. Режим «с ночёвкой» смотрит на сегодня и завтра (риск мокрого лагеря). Это операционная подсказка, а не гарантия.</div></div>`;
 }
 function dayStrip(days){
   if(!days.length) return '';
@@ -338,8 +410,17 @@ function relBlock(d){
     <div class="relrow">${chips}</div>
     <div class="relmeta">${cover} · согласованность на 3-й день: <b>${sw}</b> разброс (${g(spread)} мм).
     Чем шире разрыв «в лучшем — в худшем случае» (p10–p90), тем ниже надёжность.</div>
-    <div class="note">Оценка по разбросу моделей. <b>Калиброванный скор</b> (совпадение с фактом
-    на истории) — Фаза 2.</div></div>`;
+    <details class="rel-how"><summary>Как считается надёжность</summary>
+      <div class="body">
+        Один и тот же день считают до <b>5 независимых метеомоделей</b>. Надёжность — это
+        насколько они <b>согласны между собой</b>: чем меньше разрыв «в лучшем — в худшем
+        случае» (p10–p90) относительно медианы, тем выше надёжность. На дальних днях
+        моделей в расчёте меньше — оценка автоматически снижается.
+        ${CW.map((w,i)=>`<div class="rel-lv"><i class="${CB[i]}"></i><span><b class="${GC[i]}">${w}</b> — ${LVL_DESC[i]}</span></div>`).join('')}
+        <div style="margin-top:7px;color:var(--ink3)">Это оценка <b>по разбросу моделей</b>
+        (предварительно). Калиброванный скор — совпадение прогноза с фактом на истории —
+        появится в Фазе 2.</div>
+      </div></details></div>`;
 }
 
 async function loadForecast(id){
@@ -349,25 +430,32 @@ async function loadForecast(id){
     const d=await api('/api/forecast?location='+encodeURIComponent(id));
     const upd=new Date(d.computed_at);
     const leg=`<div class="dayleg">
+      <span>🥾 однодневно · 🏕 с ночёвкой — <b>стоит ли идти</b></span>
       <span><b>%</b> — вероятность осадков</span>
-      <span><i class="dd bg-a"></i> точка — надёжность прогноза (разброс моделей)</span>
-      <span>в скобках — <b>в лучшем случае</b> (меньше дождя) … <b>в худшем</b> (больше)</span></div>`;
-    const rows=d.days.map(x=>{
+      <span><i class="dd bg-a"></i> надёжность (разброс моделей)</span>
+      <span>в скобках — от <b>меньшего</b> дождя к <b>большему</b></span></div>`;
+    const rows=d.days.map((x,i)=>{
       const lvl=confLevel(x, x.n_models);
+      const hd=hikeDay(x), hn=hikeNight(x, d.days[i+1]);
       const nm = x.n_models<5 ? ` · <span class="tiny">${x.n_models}/5 моделей</span>` : '';
       return `<div class="day">
       <div class="dt">${dm(x.day)}<small>${wd(x.day)}</small></div>
       <div class="ic">${HIL_IC[x.hil_level]}</div>
       <div class="bw"><span class="band-num"><b>${g(x.p50)}</b> <u>(${g(x.p10)}–${g(x.p90)})</u> мм · ${x.hil_label}${nm}</span>
         ${band(x)}
-        <span class="rel-inline"><i class="dd ${CB[lvl]}"></i><span class="${GC[lvl]}">${CW[lvl]}</span></span></div>
+        <div class="hike">
+          <span class="hbadge">🥾<i class="dd ${CB[hd.lvl]}"></i><span class="${GC[hd.lvl]}">${HW[hd.lvl]}</span><em>день</em></span>
+          <span class="hbadge">🏕<i class="dd ${CB[hn.lvl]}"></i><span class="${GC[hn.lvl]}">${HW[hn.lvl]}</span><em>ночёвка${hn.partial?'*':''}</em></span>
+          <span class="rel-inline" style="margin-left:auto"><i class="dd ${CB[lvl]}"></i><span class="${GC[lvl]} tiny">${CW[lvl]}</span></span>
+        </div></div>
       <div class="pop">${Math.round(x.pop*100)}%<span class="lbl">вер-ть</span></div></div>`;
     }).join('');
     view.innerHTML=`<button class="back" onclick="loadHome()">‹ Все точки</button>
       <div class="dhead"><div class="loc">${d.location.name}</div><div class="tiny">${d.location.elevation_m} м</div></div>
       <div class="row" style="margin:0 2px 10px"><span class="pill ok">🛰 ${d.n_models} ${modelsWord(d.n_models)}</span>
         <span class="tiny">обновлено ${String(upd.getHours()).padStart(2,'0')}:${String(upd.getMinutes()).padStart(2,'0')}</span></div>
-      ${weeklyChart(d.days)}${relBlock(d)}<div class="days">${leg}${rows}</div>
+      ${hikeHero(d.days)}${weeklyChart(d.days)}${relBlock(d)}<div class="days">${leg}${rows}
+      <div class="tiny" style="padding:8px 2px 4px;line-height:1.4">* у последнего дня прогноза на следующие сутки ещё нет — оценка «с ночёвкой» предварительна.</div></div>
       <section id="secHourly">${H_HOURLY}<div class="skel"></div></section>
       <section id="secHistory">${H_HIST}<div class="skel"></div></section>`;
     hydrateHourly(id); hydrateHistory(id);
