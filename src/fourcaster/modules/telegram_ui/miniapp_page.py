@@ -54,7 +54,9 @@ HTML = r'''<!doctype html>
     --p0:#93bbe0; --p1:#75a5d5; --p2:#5a8cc4; --p3:#4272aa; --p4:#2c588c; --p5:#183f6d;
     --shadow:0 1px 2px rgba(20,25,35,.06),0 6px 18px rgba(20,25,35,.10);
   }
-  .card,.blk,.days,.rel,.cmp,.hero{box-shadow:var(--shadow)}
+  /* тень — только у карточек верхнего уровня; .days теперь живёт внутри .blk,
+     и её тень рисовалась тёмным прямоугольником поверх подложки блока */
+  .card,.blk,.rel,.cmp,.hero{box-shadow:var(--shadow)}
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   body{margin:0;background:var(--bg);color:var(--ink);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
@@ -140,7 +142,8 @@ HTML = r'''<!doctype html>
   .dcell.dry{background:var(--brand-wash);outline:1px solid var(--brand)}
   .dcell .wd{font-size:9px;color:var(--ink3);font-weight:700}
   .dcell .di{font-size:15px;line-height:1.3}
-  .dcell .dd{margin:2px auto 0}
+  .dcell .marks{display:flex;gap:3px;justify-content:center;margin-top:3px}
+  .sq{width:8px;height:8px;border-radius:2px;display:inline-block}
   .dcell .mm{font-size:8.5px;color:var(--ink3);font-variant-numeric:tabular-nums}
   .hint{font-size:10.5px;color:var(--ink3);margin:0 2px 10px;display:flex;gap:12px;flex-wrap:wrap}
   .hint span{display:inline-flex;gap:5px;align-items:center}
@@ -443,12 +446,13 @@ function dayStrip(days){
   let driest=-1, best=1e9;
   up.forEach((d,i)=>{ if(i>0 && d.p50<best){ best=d.p50; driest=i; } });
   const cells=up.map((d,i)=>{
-    const hv=hikeDay(d).lvl;                 // «идти / можно / спорно / не идти»
+    const hv=hikeDay(d).lvl;                       // однодневный выход
+    const hn=hikeNight(d,days[i+1]).lvl;           // с ночёвкой (учитывает следующий день)
     const dry=(i===driest && best<2);
-    return `<div class="dcell ${dry?'dry':''}" title="${wd(d.day)} ${dm(d.day)} · ${HW[hv]} · ${g(d.p50)} мм">
+    return `<div class="dcell ${dry?'dry':''}" title="${wd(d.day)} ${dm(d.day)} · ${g(d.p50)} мм · днём: ${HW[hv]} · с ночёвкой: ${HW[hn]}">
       <div class="wd">${wd(d.day)}</div>
       <div class="di">${HIL_IC[d.hil_level]}</div><div class="mm">${g(d.p50)}</div>
-      <div class="dd ${CB[hv]}"></div></div>`;
+      <div class="marks"><i class="dd ${CB[hv]}"></i><i class="sq ${CB[hn]}"></i></div></div>`;
   }).join('');
   return `<div class="strip">${cells}</div>`;
 }
@@ -512,9 +516,13 @@ async function loadHome(){
   view.innerHTML='<div class="skel"></div><div class="skel"></div>';
   try{
     const d=await api('/api/locations'); CACHE.locs=d.locations;
-    const hint=`<div class="hint"><span>точка под днём — <b>стоит ли идти</b>:</span>
+    const hint=`<div class="hint">
+      <span><b>стоит ли идти:</b></span>
       <span><i class="dd bg-g"></i>идти</span><span><i class="dd bg-a"></i>можно</span>
       <span><i class="dd bg-o"></i>спорно</span><span><i class="dd bg-r"></i>не идти</span>
+      <span style="flex-basis:100%;height:0"></span>
+      <span><i class="dd" style="background:var(--ink3)"></i>кружок — <b>днём</b></span>
+      <span><i class="sq" style="background:var(--ink3)"></i>квадрат — <b>с ночёвкой</b></span>
       <span>рамка — самый сухой день</span></div>`;
     view.innerHTML=hint+d.locations.map(l=>{
       const t=l.today;
