@@ -24,7 +24,7 @@ HTML = r'''<!doctype html>
     --brand:#ff6b35; --brand-ink:#ff8a5c; --brand-wash:#3a2116;
     --accent:#ff6b35; --precip:#6f9bd0;
     --g:#4bbf7f; --a:#e0b13e; --o:#f0783a; --r:#ec5648;
-    --p0:#35597c; --p1:#43759f; --p2:#548ec2; --p3:#6fa9dd; --p4:#95c5f0; --p5:#c0defc;
+    --p0:#dbeafb; --p1:#b6d2f1; --p2:#8fb4e3; --p3:#6b96d1; --p4:#4d78b9; --p5:#33619f;
     --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 26px rgba(0,0,0,.5);
   }
   @media (prefers-color-scheme:light){:root{
@@ -42,7 +42,7 @@ HTML = r'''<!doctype html>
     --brand:#ff6b35; --brand-ink:#ff8a5c; --brand-wash:#3a2116;
     --accent:#ff6b35; --precip:#6f9bd0;
     --g:#4bbf7f; --a:#e0b13e; --o:#f0783a; --r:#ec5648;
-    --p0:#35597c; --p1:#43759f; --p2:#548ec2; --p3:#6fa9dd; --p4:#95c5f0; --p5:#c0defc;
+    --p0:#dbeafb; --p1:#b6d2f1; --p2:#8fb4e3; --p3:#6b96d1; --p4:#4d78b9; --p5:#33619f;
     --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 26px rgba(0,0,0,.5);
   }
   :root[data-theme="light"]{
@@ -105,7 +105,7 @@ HTML = r'''<!doctype html>
   .chart .cl span{display:inline-flex;gap:5px;align-items:center}
   .sw{width:10px;height:10px;border-radius:3px;display:inline-block}
 
-  .days{background:var(--surface);border:1px solid var(--hair);border-radius:16px;padding:4px 12px;margin-bottom:10px}
+  .days{margin:0 -2px}
   .dayleg{font-size:10.5px;color:var(--ink3);display:flex;gap:14px;flex-wrap:wrap;
     padding:9px 2px 7px;border-bottom:1px solid var(--hair);line-height:1.4}
   .dayleg span{display:inline-flex;gap:5px;align-items:center}
@@ -125,8 +125,7 @@ HTML = r'''<!doctype html>
   .daymeta b{color:var(--ink2);font-weight:700}
   .bw .track{margin-top:8px}
   .track{position:relative;height:7px;border-radius:4px;background:var(--surface3);overflow:hidden}
-  .rng{position:absolute;top:0;bottom:0;border-radius:4px;
-    background:linear-gradient(90deg,color-mix(in srgb,var(--precip) 25%,transparent),var(--precip))}
+  .rng{position:absolute;top:0;bottom:0;border-radius:4px;background:var(--brand)}
   .p50{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--ink);border-radius:2px;
     box-shadow:0 0 0 2px var(--surface)}
   /* надёжность у полосы разброса — что она и оценивает */
@@ -207,6 +206,8 @@ HTML = r'''<!doctype html>
   /* фиксированная высота, а не квадрат: при 3–6 столбцах aspect-ratio:1 раздувал
      ячейки до ~70 px и виджет переставал влезать в экран */
   .hm .cells i{height:12px;border-radius:3px}
+  .hm .cells i.nd{background:repeating-linear-gradient(45deg,
+    var(--hair2) 0 2px,transparent 2px 5px) !important}
   /* подписи столбцов — вертикально: горизонтально таймстемп не влезает в колонку
      шириной ~15–40 px, а подписать нужно каждый выпуск */
   .hm-hd{align-items:end}
@@ -286,8 +287,9 @@ function applyTheme(){
 if(tg){ tg.ready(); tg.expand(); tg.onEvent('themeChanged', applyTheme); }
 applyTheme();
 const HIL_IC=['☁️','🌦','🌧','🌧','🌧','⛈'];
-// Шкала осадков — один синий тон, светлее → насыщеннее по уровню HIL 0..5
-// (проверена валидатором палитры: монотонная светлота, различима при CVD).
+// Шкала осадков — один синий тон: светлое = сухо, тёмное = дождь (в обеих темах).
+// Проверена валидатором палитры: монотонная светлота, различима при CVD; тёмный
+// конец в тёмной теме держит контраст 2.6:1 к подложке, чтобы ливень не исчезал.
 // Зелёный/жёлтый/красный оставлены статусам (надёжность, вердикт), чтобы один
 // цвет не значил в соседних блоках то «сухо», то «надёжно».
 const PC=['var(--p0)','var(--p1)','var(--p2)','var(--p3)','var(--p4)','var(--p5)'];
@@ -601,8 +603,10 @@ async function loadForecast(id){
       ${hikeHero(d.days)}
       <div class="blk"><h4>🌧 Осадки по дням <span class="tiny">— ${d.days.length} ${plural(d.days.length,'день','дня','дней')}</span></h4>
         ${weeklyChart(d.days)}</div>
-      ${relBlock(d)}<div class="days">${leg}${rows}
-      <div class="tiny" style="padding:8px 2px 4px;line-height:1.4">* у последнего дня прогноза на следующие сутки ещё нет — оценка «с ночёвкой» предварительна.</div></div>
+      <div class="blk"><h4>📋 Прогноз по дням <span class="tiny">— ${d.days.length} ${plural(d.days.length,'день','дня','дней')}, по важности сигналов</span></h4>
+        <div class="days">${leg}${rows}
+        <div class="tiny" style="padding:8px 2px 4px;line-height:1.4">* у последнего дня прогноза на следующие сутки ещё нет — оценка «с ночёвкой» предварительна.</div></div></div>
+      ${relBlock(d)}
       <section id="secHistory" class="blk">${H_HIST}<div class="skel"></div></section>`;
     hydrateHourly(id); hydrateHistory(id);
   }catch(e){view.innerHTML='<div class="state">Прогноз ещё не рассчитан.</div>'}
@@ -701,7 +705,7 @@ function historyHeatmap(h){
         `<span class="${i===n-1?'last':''}" title="${s}">${s}</span>`).join('')}</div></div>`;
     const body=h.rows.map(r=>{
       const rmax=Math.max(FLOOR,...r.vals.filter(v=>v!=null));
-      const cells=r.vals.map((v,i)=>`<i style="background:${heatColor(v,rmax)}" title="${stamps[i]} → ${v==null?'нет данных':Math.round(v*10)/10+' мм'}"></i>`).join('');
+      const cells=r.vals.map((v,i)=>`<i class="${v==null?'nd':''}" style="background:${heatColor(v,rmax)}" title="${stamps[i]} → ${v==null?'выпуска ещё не было':Math.round(v*10)/10+' мм'}"></i>`).join('');
       return `<div class="hmrow"><span class="yl"><b>${wd(r.date)}</b> ${dm(r.date)}</span><div class="cells" style="${gtc}">${cells}</div></div>`;
     }).join('');
     return `<div class="story">Строки — прогнозируемая дата, столбцы — момент выпуска прогноза (${n}, последний выделен).
