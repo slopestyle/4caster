@@ -12,58 +12,99 @@
 Реализован сквозной сценарий конвейера PRD §10.1 и доведён до маленького
 работающего продукта. Что есть сейчас:
 
-- **2 локации** (Ачишхо, Аибга; кластер CL-ALP-W) — подмножество каталога §7.3;
-- **5 детерминированных моделей** (IFS, ICON, GFS, GEM, ARPEGE) через Open-Meteo;
-- **консенсус** — взвешенные перцентили p10/p50/p90 + вероятность осадков (POP);
+- **22 локации** из каталога §7.3, координаты сверены с DEM ([ADR-0017](docs/adr/ADR-0017-dem-verification-policy.md));
+  ещё 11 точек — черновики: высота сошлась, привязка к ориентиру нет (FR-LOC-5);
+- **5 детерминированных моделей** (IFS, ICON, GFS, GEM, ARPEGE) **и 2 ансамбля**
+  (ECMWF IFS ENS — 51 член, NOAA GEFS — 31) через Open-Meteo;
+- **консенсус** — единый взвешенный пул из 87 членов (§10.5.1): перцентили
+  p10/p25/p50/p75/p90 и вероятность осадков прямо по эмпирической CDF;
+- **надёжность** — компоненты A (согласие моделей), E (разброс ансамблей против
+  климата), S (устойчивость прогноза от прогона к прогону). Показывается
+  качественной шкалой, а не числом: калибровки по факту ещё нет (INV-6);
+- **орографическая коррекция** температуры, нулевая изотерма и фаза осадков
+  (снег / мокрый снег / дождь) — критично для точек выше 2500 м;
 - **HIL** (Hiking Impact Level) — упрощённая эвристика по суточной сумме;
+- **архив реанализа** за 2024–2026 по всем точкам: 30 756 суточных значений,
+  из них посчитана климатология σ_clim;
 - **детекция изменений** прогноза и **push-уведомления** подписчикам;
 - **Telegram-бот** (aiogram 3) + **Mini App** (список точек, недельный прогноз,
-  метеограмма 48 ч, heatmap эволюции прогноза, надёжность по разбросу моделей);
+  метеограмма 48 ч, heatmap эволюции прогноза, разбор надёжности по компонентам);
 - **read-модель** в Supabase Postgres; **конвейер** в GitHub Actions по расписанию.
 
 ```
-Open-Meteo (5 моделей) → нормализация → взвешенный консенсус → HIL
+Open-Meteo (5 моделей + 2 ансамбля) → нормализация → пул членов → консенсус
+        → downscaling (изотерма, фаза) → надёжность (A/E/S) → HIL
         → карточка (read-модель) → бот/Mini App
         → детекция изменений → алерты подписчикам
 ```
 
-Это **не** полный MVP из PRD. Осознанно упрощено/отложено (Фаза 2+): орографический
-downscaling (§10.3), калиброванный Reliability Score + калибровка (§10.6), ансамбли,
-Accuracy Engine и верификация по ground truth (§8.4), полный HIL (§10.4), остальные
-локации каталога (§7.3). Полный план — PRD §19.
+Это **не** полный MVP из PRD. Осознанно упрощено/отложено (Фаза 2+): калибровка
+Reliability Score и компоненты H/G (§10.6), Accuracy Engine и ground truth по
+станциям (§8.4, §10.8), обучение весов и `k_oro` (§10.8.5), полный HIL (§10.4),
+Trips (§6.1), резервный транспорт api.met.no (§8.3). Полный план — PRD §19,
+текущий статус — PRD §0.
 
 ## Запуск
 
 ```bash
 python -m pip install -e ".[dev]"        # установка + pytest
 
-python -m fourcaster.cli                 # живой запрос к Open-Meteo, Ачишхо + Аибга
+python -m fourcaster.cli                 # живой прогон по всему опубликованному каталогу
 python -m fourcaster.cli --offline       # из записанных фикстур (tests/fixtures)
 python -m fourcaster.cli achishkho -d 5  # одна локация, горизонт 5 суток
 python -m fourcaster.cli achishkho --save  # + запись в Postgres и рассылка алертов
+python -m fourcaster.cli --no-ensembles  # только детерминированное ядро (экономия квоты)
 pytest                                   # тесты (offline, без сети)
 ```
+
+Обслуживание данных:
+
+```bash
+python scripts/verify_locations.py          # сверка каталога с DEM (задача 0.3)
+python scripts/verify_locations.py --snap   # + поиск координат для несошедшихся точек
+python scripts/backfill_archive.py          # выгрузка архива ERA5 + пересборка σ_clim
+python scripts/backfill_archive.py --report # только отчёт о полноте архива
+```
+
+На Windows консоль по умолчанию cp1251 — если скрипт или `alembic` падает на
+печати юникода, запускайте с `PYTHONIOENCODING=utf-8`.
 
 ## Структура (подмножество PRD §11.3)
 
 ```
 src/fourcaster/
-  shared_kernel/    geo.py, variables.py — каноническое ядро
+  shared_kernel/    geo.py (Location + dem_elevation_m), variables.py
   modules/
-    locations/       seed-каталог (Ачишхо, Аибга)
-    ingestion/        порт ForecastProvider + адаптер Open-Meteo (ACL)
+    locations/       seed-каталог §7.3: 33 точки, 22 опубликованы
+    ingestion/        порт ForecastProvider + адаптер Open-Meteo (ACL),
+                        лимитер / ретраи / предохранитель
     forecasting/      нормализация к канонической схеме
-    consensus/        реестр моделей + взвешенные перцентили, POP
+    consensus/        реестр моделей и ансамблей + пул членов, перцентили, POP
+    downscaling/      остаточная коррекция T, изотерма, фаза осадков
+    reliability/      компоненты A/E/S + климатология σ_clim
     hazard/           RainHazard: упрощённый HIL
     changedetection/  значимые изменения vs. прошлый прогон
     notification/     форматирование и рассылка алертов
     telegram_ui/      бот (aiogram 3), FastAPI-webhook, Mini App, рендер карточки
-  platform/          config, движок БД, ORM read-модель, проекции
-  cli.py             композиционный корень среза
+  platform/          config, движок БД, ORM (read-модель + архив), проекции
+  cli.py             композиционный корень конвейера
 api/index.py         точка входа Vercel (ASGI app)
+scripts/             сверка каталога, backfill архива, привязка webhook
 ```
 
 Подробнее об инвариантах, потоках данных и подводных камнях — [CLAUDE.md](CLAUDE.md).
+
+## Архитектурные решения
+
+Расхождения с требованиями PRD оформляются как ADR в [docs/adr/](docs/adr/):
+
+| ADR | О чём |
+|---|---|
+| [0013](docs/adr/ADR-0013-hosting-serverless-no-card.md) | Хостинг на бесплатном serverless без верификации картой (вместо §16) |
+| [0014](docs/adr/ADR-0014-ensemble-pool-weights.md) | Ансамбли в общем пуле членов и перевзвешивание §8.2 |
+| [0015](docs/adr/ADR-0015-residual-orographic-correction.md) | Остаточная орографическая коррекция: провайдер уже правит температуру сам |
+| [0016](docs/adr/ADR-0016-reliability-aes-and-era5-source.md) | Надёжность на A/E/S и ERA5 seamless как источник архива |
+| [0017](docs/adr/ADR-0017-dem-verification-policy.md) | Сверка каталога по DEM: понижаем уверенность, но не повышаем |
 
 ## Хостинг и деплой
 
@@ -100,4 +141,6 @@ Vercel [api/index.py](api/index.py).
 ## Атрибуция
 
 Источники (CC BY 4.0): данные Open-Meteo и первоисточников —
-DWD (ICON), NOAA (GFS), ECMWF (IFS), ECCC (GEM), Météo-France (ARPEGE).
+DWD (ICON), NOAA (GFS и GEFS), ECMWF (IFS и IFS ENS), ECCC (GEM),
+Météo-France (ARPEGE). Архив реанализа и высоты рельефа: ERA5 / ERA5-Land
+(Copernicus Climate Change Service) и Copernicus DEM GLO-90.
