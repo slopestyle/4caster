@@ -9,7 +9,9 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Engine
 
 from fourcaster.modules.consensus.calculator import DayConsensus
+from fourcaster.modules.downscaling import DayProfile
 from fourcaster.modules.hazard.rain import classify_hil
+from fourcaster.modules.reliability import Reliability
 from fourcaster.platform.models import (
     ForecastCardCache,
     ForecastHistory,
@@ -17,16 +19,51 @@ from fourcaster.platform.models import (
 )
 
 
-def _consensus_to_json(days: list[DayConsensus]) -> list[dict]:
+def _consensus_to_json(
+    days: list[DayConsensus],
+    reliability: list[Reliability] | None = None,
+    profiles: list[DayProfile] | None = None,
+) -> list[dict]:
+    """Проекция консенсуса в JSON карточки.
+
+    Надёжность кладётся сюда же, посуточно: она считается в домене (§10.6), а
+    бот и Mini App обязаны только показывать готовое (FR-TG-7). Числа скора в
+    выдачу не идут — INV-6 разрешает только качественную шкалу, пока нет
+    калибровки; `score` оставлен для отладки и будущей калибровки.
+    """
+    by_day = {r.day: r for r in reliability or ()}
+    by_index = list(profiles or ())
     out = []
-    for d in days:
+    for i, d in enumerate(days):
         hil = classify_hil(d.p50)
-        out.append({
+        item = {
             "day": d.day.isoformat(),
             "p10": d.p10, "p50": d.p50, "p90": d.p90,
-            "pop": d.pop, "n_models": d.n_models,
+            "p25": d.p25, "p75": d.p75,
+            "pop": d.pop, "n_models": d.n_models, "n_members": d.n_members,
             "hil_level": hil.level, "hil_label": hil.label,
-        })
+        }
+        rel = by_day.get(d.day)
+        if rel is not None:
+            item["reliability"] = {
+                "level": rel.level,
+                "label": rel.label,
+                "score": rel.score,
+                "is_calibrated": rel.is_calibrated,
+                "agreement": rel.components.agreement,
+                "ensemble": rel.components.ensemble,
+                "ensemble_is_proxy": rel.components.ensemble_is_proxy,
+                "stability": rel.components.stability,
+                "n_members": rel.components.n_members,
+                "n_history_runs": rel.components.n_history_runs,
+            }
+        profile = by_index[i] if i < len(by_index) else None
+        if profile is not None and profile.phase is not None:
+            item["temp_max_c"] = profile.temp_max_c
+            item["temp_min_c"] = profile.temp_min_c
+            item["freezing_level_m"] = profile.freezing_level_m
+            item["precip_phase"] = profile.phase.value
+        out.append(item)
     return out
 
 
@@ -37,6 +74,8 @@ def upsert_card(
     computed_at: datetime,
     days: list[DayConsensus],
     rendered_text: str,
+    reliability: list[Reliability] | None = None,
+    profiles: list[DayProfile] | None = None,
 ) -> None:
     """Идемпотентная запись карточки (INSERT ... ON CONFLICT DO UPDATE)."""
     payload = {
@@ -44,7 +83,7 @@ def upsert_card(
         "computed_at": computed_at,
         "days": len(days),
         "rendered_text": rendered_text,
-        "consensus": _consensus_to_json(days),
+        "consensus": _consensus_to_json(days, reliability, profiles),
     }
     stmt = insert(ForecastCardCache).values(**payload)
     stmt = stmt.on_conflict_do_update(
@@ -151,6 +190,47 @@ def get_history(engine: Engine, location_id: str, *, max_issues: int = 14) -> di
         "rows": rows,
         "max": max_p50,
     }
+
+
+def get_recent_series(
+    engine: Engine, location_id: str, *, n_issues: int = 6
+) -> dict[str, dict[str, list]]:
+    """Последние N прогонов по каждой прогнозируемой дате — сырьё компоненты S.
+
+    Возвращает {valid_date_iso: {"p50": [...], "hil": [...]}} в порядке выпуска
+    прогнозов (от старого к новому). Flip-Flop Index (§10.6) считает именно по
+    такой последовательности: как менялась оценка на один и тот же день.
+    """
+    sub = (
+        select(ForecastHistory.issued_at)
+        .where(ForecastHistory.location_id == location_id)
+        .distinct()
+        .order_by(ForecastHistory.issued_at.desc())
+        .limit(n_issues)
+        .scalar_subquery()
+    )
+    stmt = (
+        select(
+            ForecastHistory.valid_date,
+            ForecastHistory.issued_at,
+            ForecastHistory.p50,
+            ForecastHistory.hil_level,
+        )
+        .where(
+            ForecastHistory.location_id == location_id,
+            ForecastHistory.issued_at.in_(sub),
+        )
+        .order_by(ForecastHistory.valid_date, ForecastHistory.issued_at)
+    )
+    with engine.connect() as conn:
+        rows = conn.execute(stmt).all()
+
+    out: dict[str, dict[str, list]] = {}
+    for row in rows:
+        entry = out.setdefault(row.valid_date.isoformat(), {"p50": [], "hil": []})
+        entry["p50"].append(float(row.p50))
+        entry["hil"].append(int(row.hil_level))
+    return out
 
 
 def get_previous_snapshot(engine: Engine, location_id: str) -> dict:

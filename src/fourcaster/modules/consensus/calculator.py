@@ -1,19 +1,70 @@
-"""Расчёт консенсуса: взвешенные перцентили + POP (PRD §10.5).
+"""Расчёт консенсуса: единый взвешенный пул членов (PRD §10.5).
 
-Для каждого валидного дня строится взвешенный пул членов (по одному
-члену на модель в срезе) и считаются перцентили p10/p50/p90 и
-вероятность осадков POP. Сумма нормированных весов = 1.0 (INV-3);
-каждая модель учтена один раз (INV-4).
+Для каждого валидного дня строится пул членов §10.5.1: детерминированная
+модель даёт один член с весом `w_i`, ансамбль из N членов — N членов с весом
+`w_j / N` каждый. Из пула берутся перцентили p10/p25/p50/p75/p90 и POP.
+Сумма нормированных весов = 1.0 (INV-3); каждая модель учтена один раз (INV-4).
+
+Среднее по осадкам не считается и не публикуется: распределение сильно
+скошено, и одна «мокрая» модель уводит среднее туда, где не находится ни один
+из сценариев (§10.5.1).
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections import defaultdict
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 
 import numpy as np
 
-from fourcaster.modules.forecasting.normalize import ModelSnapshot
+from fourcaster.modules.forecasting.normalize import EnsembleSnapshot, ModelSnapshot
+
+# Порог «был дождь» для POP по §10.5.1.
+POP_THRESHOLD_MM = 0.2
+# Ниже этого размера пула вероятность по долям веса слишком грубая (пять
+# детерминированных моделей дают шаг ~0.2), и честнее взять вероятность,
+# посчитанную самим провайдером.
+POOLED_POP_MIN_MEMBERS = 10
+
+
+@dataclass(frozen=True, slots=True)
+class DayPool:
+    """Пул членов на одни сутки (§10.5.1).
+
+    Детерминированная и ансамблевая части хранятся раздельно: консенсус
+    считается по объединению, а надёжность — по частям (компонента A смотрит
+    только на согласие независимых моделей, E — только на разброс членов).
+    """
+
+    day: date
+    det_values: tuple[float, ...] = ()
+    det_weights: tuple[float, ...] = ()
+    det_probabilities: tuple[float, ...] = ()
+    det_prob_weights: tuple[float, ...] = ()
+    ens_values: tuple[float, ...] = ()
+    ens_weights: tuple[float, ...] = ()
+    det_temp_max: tuple[float, ...] = ()
+    det_temp_min: tuple[float, ...] = ()
+    provider_elevation_m: float | None = None    # FR-DS-2
+
+    @property
+    def values(self) -> np.ndarray:
+        return np.asarray(self.det_values + self.ens_values, dtype=float)
+
+    @property
+    def weights(self) -> np.ndarray:
+        """Веса всего пула, нормированные к единице (INV-3)."""
+        w = np.asarray(self.det_weights + self.ens_weights, dtype=float)
+        return w / w.sum()
+
+    @property
+    def n_models(self) -> int:
+        return len(self.det_values)
+
+    @property
+    def n_members(self) -> int:
+        return len(self.det_values) + len(self.ens_values)
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,8 +73,13 @@ class DayConsensus:
     p10: float
     p50: float
     p90: float
-    pop: float           # вероятность осадков > 0.1 мм, 0..1
-    n_models: int        # сколько моделей участвовало в дне
+    pop: float           # вероятность осадков > 0.2 мм, 0..1
+    n_models: int        # сколько детерминированных моделей участвовало в дне
+    p25: float = 0.0
+    p75: float = 0.0
+    n_members: int = 0   # размер пула вместе с членами ансамблей
+    temp_max_c: float | None = None   # медиана по моделям, до коррекции §10.3
+    temp_min_c: float | None = None
 
 
 def weighted_percentile(
@@ -109,55 +165,124 @@ def compute_hourly(
     return {"times": times, "p10": p10, "p50": p50, "p90": p90, "pop": pop}
 
 
-def compute_consensus(
-    snapshots: list[ModelSnapshot], *, max_days: int
-) -> list[DayConsensus]:
-    if not snapshots:
-        return []
+def build_pools(
+    snapshots: list[ModelSnapshot],
+    ensembles: list[EnsembleSnapshot] | None = None,
+    *,
+    max_days: int,
+) -> list[DayPool]:
+    """Сборка пула членов по суткам (§10.5.1).
 
-    # общий календарь дней (пересечение по позиции — ряды выровнены по UTC)
-    n_days = min(max_days, min(len(s.dates) for s in snapshots))
-    ref_dates = snapshots[0].dates
+    Дни собираются по календарной дате, а не по позиции в ряду: детерминированные
+    и ансамблевые ряды приходят из разных эндпоинтов и могут начинаться с разных
+    суток, а сдвиг на день здесь означал бы прогноз не на тот день.
+    """
+    det_v: dict[date, list[float]] = defaultdict(list)
+    det_w: dict[date, list[float]] = defaultdict(list)
+    det_p: dict[date, list[float]] = defaultdict(list)
+    det_pw: dict[date, list[float]] = defaultdict(list)
+    ens_v: dict[date, list[float]] = defaultdict(list)
+    ens_w: dict[date, list[float]] = defaultdict(list)
+    t_max: dict[date, list[float]] = defaultdict(list)
+    t_min: dict[date, list[float]] = defaultdict(list)
+    provider_elevation: float | None = None
 
-    result: list[DayConsensus] = []
-    for i in range(n_days):
-        vals: list[float] = []
-        wts: list[float] = []
-        probs: list[float] = []
-        prob_wts: list[float] = []
-        for s in snapshots:
-            v = s.precip_total_mm[i]
-            if v is None:
+    for snapshot in snapshots:
+        provider_elevation = snapshot.provider_elevation_m or provider_elevation
+        n = len(snapshot.dates)
+        temps_max = snapshot.temp_max_c or (None,) * n
+        temps_min = snapshot.temp_min_c or (None,) * n
+        for day, value, prob, hi, lo in zip(
+            snapshot.dates, snapshot.precip_total_mm, snapshot.precip_probability,
+            temps_max, temps_min,
+        ):
+            if value is None:
                 continue  # модель не покрывает этот день — вне пула
-            vals.append(v)
-            wts.append(s.model.weight)
-            p = s.precip_probability[i]
-            if p is not None:
-                probs.append(p)
-                prob_wts.append(s.model.weight)
+            det_v[day].append(value)
+            det_w[day].append(snapshot.model.weight)
+            if prob is not None:
+                det_p[day].append(prob)
+                det_pw[day].append(snapshot.model.weight)
+            if hi is not None:
+                t_max[day].append(hi)
+            if lo is not None:
+                t_min[day].append(lo)
 
-        if not vals:
-            continue  # день не покрыт ни одной моделью — горизонт закончился
+    for ens in ensembles or ():
+        # Вес ансамбля делится между членами, реально покрывшими день: если на
+        # дальнем дне ответила половина членов, ансамбль не должен из-за этого
+        # потерять половину своего веса в пуле.
+        covered: dict[date, list[float]] = defaultdict(list)
+        for member in ens.members:
+            for day, value in zip(ens.dates, member):
+                if value is not None:
+                    covered[day].append(value)
+        for day, values in covered.items():
+            ens_v[day].extend(values)
+            ens_w[day].extend([ens.ensemble.weight / len(values)] * len(values))
 
-        values = np.asarray(vals, dtype=float)
-        weights = np.asarray(wts, dtype=float)
-        weights = weights / weights.sum()  # нормировка (INV-3)
-
-        if probs:
-            pw = np.asarray(prob_wts, dtype=float)
-            pop = float(np.average(probs, weights=pw))
-        else:
-            # запасной POP: доля веса моделей, давших > 0.1 мм
-            pop = float(weights[values > 0.1].sum())
-
-        result.append(
-            DayConsensus(
-                day=ref_dates[i],
-                p10=round(weighted_percentile(values, weights, 0.10), 1),
-                p50=round(weighted_percentile(values, weights, 0.50), 1),
-                p90=round(weighted_percentile(values, weights, 0.90), 1),
-                pop=round(pop, 2),
-                n_models=len(vals),
-            )
+    days = sorted(set(det_v) | set(ens_v))[:max_days]
+    return [
+        DayPool(
+            day=day,
+            det_values=tuple(det_v[day]),
+            det_weights=tuple(det_w[day]),
+            det_probabilities=tuple(det_p[day]),
+            det_prob_weights=tuple(det_pw[day]),
+            ens_values=tuple(ens_v[day]),
+            ens_weights=tuple(ens_w[day]),
+            det_temp_max=tuple(t_max[day]),
+            det_temp_min=tuple(t_min[day]),
+            provider_elevation_m=provider_elevation,
         )
-    return result
+        for day in days
+    ]
+
+
+def compute_consensus(
+    snapshots: list[ModelSnapshot],
+    *,
+    max_days: int,
+    ensembles: list[EnsembleSnapshot] | None = None,
+) -> list[DayConsensus]:
+    return [consensus_from_pool(p) for p in build_pools(snapshots, ensembles, max_days=max_days)]
+
+
+def consensus_from_pool(pool: DayPool) -> DayConsensus:
+    values, weights = pool.values, pool.weights
+    return DayConsensus(
+        day=pool.day,
+        p10=round(weighted_percentile(values, weights, 0.10), 1),
+        p25=round(weighted_percentile(values, weights, 0.25), 1),
+        p50=round(weighted_percentile(values, weights, 0.50), 1),
+        p75=round(weighted_percentile(values, weights, 0.75), 1),
+        p90=round(weighted_percentile(values, weights, 0.90), 1),
+        pop=round(_pop(pool, values, weights), 2),
+        n_models=pool.n_models,
+        n_members=pool.n_members,
+        temp_max_c=_median(pool.det_temp_max),
+        temp_min_c=_median(pool.det_temp_min),
+    )
+
+
+def _median(values: tuple[float, ...]) -> float | None:
+    """Медиана по моделям — устойчива к одной выпавшей из строя модели."""
+    return round(float(np.median(values)), 1) if values else None
+
+
+def _pop(pool: DayPool, values: np.ndarray, weights: np.ndarray) -> float:
+    """Вероятность осадков.
+
+    При достаточно большом пуле — прямо по нему (§10.5.1): доля веса членов,
+    давших больше порога. Это то же самое, что вероятность по эмпирической CDF,
+    и с 82 членами ансамблей она хорошо разрешена. Если ансамблей на этот день
+    нет, пул вырождается в пять детерминированных значений: доля веса дала бы
+    вероятность с шагом ~0.2, поэтому берём вероятность от провайдера.
+    """
+    if pool.n_members >= POOLED_POP_MIN_MEMBERS:
+        return float(weights[values > POP_THRESHOLD_MM].sum())
+    if pool.det_probabilities:
+        return float(np.average(
+            pool.det_probabilities, weights=np.asarray(pool.det_prob_weights)
+        ))
+    return float(weights[values > POP_THRESHOLD_MM].sum())

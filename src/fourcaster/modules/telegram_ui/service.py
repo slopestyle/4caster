@@ -13,6 +13,9 @@ from aiogram.types import InlineKeyboardMarkup
 from sqlalchemy.engine import Engine
 
 from fourcaster.modules.consensus.calculator import DayConsensus
+from fourcaster.modules.downscaling import DayProfile
+from fourcaster.modules.reliability import Reliability, ReliabilityComponents
+from fourcaster.shared_kernel.variables import PrecipPhase
 from fourcaster.modules.locations import CATALOG, get_location, published
 from fourcaster.modules.telegram_ui.renderers import render_forecast_card
 from fourcaster.modules.telegram_ui.keyboards import (
@@ -44,11 +47,47 @@ def render_cached_card(engine: Engine, location) -> str | None:
             day=date.fromisoformat(d["day"]),
             p10=d["p10"], p50=d["p50"], p90=d["p90"],
             pop=d["pop"], n_models=d["n_models"],
+            n_members=d.get("n_members", d["n_models"]),
         )
         for d in data["days"]
     ]
     return render_forecast_card(
-        location, days, computed_at=datetime.fromisoformat(data["computed_at"])
+        location, days,
+        reliability=[_reliability_from_json(d) for d in data["days"]
+                     if d.get("reliability")],
+        profiles=[_profile_from_json(d) for d in data["days"]],
+        computed_at=datetime.fromisoformat(data["computed_at"]),
+    )
+
+
+def _reliability_from_json(day: dict) -> Reliability:
+    """Восстановление посчитанной надёжности из карточки — без пересчёта (MB-5)."""
+    r = day["reliability"]
+    return Reliability(
+        day=date.fromisoformat(day["day"]),
+        score=r["score"],
+        level=r["level"],
+        components=ReliabilityComponents(
+            agreement=r["agreement"],
+            ensemble=r["ensemble"],
+            stability=r.get("stability"),
+            ensemble_is_proxy=r.get("ensemble_is_proxy", True),
+            n_models=day["n_models"],
+            n_members=r.get("n_members", day["n_models"]),
+            n_history_runs=r.get("n_history_runs", 0),
+        ),
+        is_calibrated=r.get("is_calibrated", False),
+    )
+
+
+def _profile_from_json(day: dict) -> DayProfile:
+    phase = day.get("precip_phase")
+    return DayProfile(
+        temp_max_c=day.get("temp_max_c"),
+        temp_min_c=day.get("temp_min_c"),
+        freezing_level_m=day.get("freezing_level_m"),
+        phase=PrecipPhase(phase) if phase else None,
+        correction_c=0.0,     # величина поправки в карточку не проецируется
     )
 
 

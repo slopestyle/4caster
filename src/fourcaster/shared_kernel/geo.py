@@ -31,10 +31,19 @@ class Location:
     id: str
     name: str
     coord: Coordinate
-    elevation_m: int
+    elevation_m: int         # истинная высота точки — её передаём провайдеру
     cluster: str
+    # FR-LOC-2: высота той же точки по DEM провайдера хранится отдельно.
+    # Разница `elevation_m − dem_elevation_m` — это то, насколько сетка модели
+    # «не видит» рельеф, и именно она нужна орографической коррекции (§10.3).
+    dem_elevation_m: int = 0
     conf: str = "M"          # уверенность в координате: H / M / L (§7.3)
     is_draft: bool = False   # FR-LOC-5: черновая точка, пользователям не видна
+
+    @property
+    def dem_offset_m(self) -> int:
+        """На сколько метров точка выше своей ячейки DEM (§10.3)."""
+        return self.elevation_m - self.dem_elevation_m
 
     @property
     def lat(self) -> float:

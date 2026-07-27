@@ -50,6 +50,23 @@ class ForecastHistory(Base):
     hil_level: Mapped[int] = mapped_column(Integer)
 
 
+class ArchiveDaily(Base):
+    """Архив суточных осадков по реанализу (PRD §8.4, задача 1.7 backfill).
+
+    Это «что было на самом деле» — основа для Accuracy Engine (§10.8), порога
+    значимости `NoiseFloor` (§10.9) и климатического разброса σ_clim, которым
+    нормируется компонента E надёжности (§10.6). Append-only, PK
+    `(location_id, valid_date)`: у одной точки за сутки один факт.
+    """
+
+    __tablename__ = "archive_daily"
+
+    location_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    valid_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    precip_mm: Mapped[float] = mapped_column(Float)
+    source: Mapped[str] = mapped_column(String(32))   # напр. era5_land
+
+
 class Subscription(Base):
     """Подписка чата на изменения прогноза по локации (US-SUB-1)."""
 

@@ -19,3 +19,20 @@ class OpenMeteoDailyResponse(BaseModel):
     elevation: float | None = None
     # ключи вида "time", "precipitation_sum_<model>", "precipitation_probability_max_<model>"
     daily: dict[str, list]
+
+
+class OpenMeteoEnsembleResponse(BaseModel):
+    """Ответ ensemble-api (§8.2 E1–E2).
+
+    Ансамблевый эндпоинт отдаёт только часовые ряды, поэтому посуточные суммы
+    система считает сама. Ключи блока `hourly`: `time`, `precipitation`
+    (контрольный член) и `precipitation_memberNN` — возмущённые члены; при
+    запросе нескольких ансамблей к именам добавляется суффикс модели.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    latitude: float
+    longitude: float
+    elevation: float | None = None
+    hourly: dict[str, list]

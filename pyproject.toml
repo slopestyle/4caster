@@ -30,6 +30,12 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# Климатология σ_clim — данные, а не код: без явного включения она не попадёт
+# ни в установленный пакет, ни в бандл Vercel, и надёжность молча откатится
+# на запасную константу.
+[tool.setuptools.package-data]
+"fourcaster.modules.reliability" = ["data/*.json"]
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]

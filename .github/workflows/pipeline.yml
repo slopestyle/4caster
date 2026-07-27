@@ -36,7 +36,8 @@ jobs:
         run: |
           SAVE=""
           if [ -n "$DATABASE_URL" ]; then SAVE="--save"; fi
-          python -m fourcaster.cli ${{ github.event.inputs.locations || 'achishkho aibga' }} $SAVE \
+          # Пусто — CLI берёт весь опубликованный каталог (published()).
+          python -m fourcaster.cli ${{ github.event.inputs.locations }} $SAVE \
             | tee cards.txt
       - name: Upload cards artifact
         uses: actions/upload-artifact@v4

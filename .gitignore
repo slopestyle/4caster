@@ -16,6 +16,10 @@ env/
 .mypy_cache/
 .ruff_cache/
 
+# кэш высот DEM для scripts/verify_locations.py (рельеф не меняется, но и в
+# репозиторий его класть незачем — восстанавливается запросом)
+scripts/.dem_cache.json
+
 # local env / secrets (12-factor, FR-DOC-5)
 .env
 .env.*

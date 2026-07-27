@@ -6,6 +6,7 @@ URL и metadata подаются из приложения; секрет чит�
 
 from __future__ import annotations
 
+import sys
 from logging.config import fileConfig
 
 from alembic import context
@@ -13,6 +14,14 @@ from sqlalchemy import engine_from_config, pool
 
 from fourcaster.platform.config import database_url_direct, safe_dsn
 from fourcaster.platform.models import Base
+
+# Windows-консоль по умолчанию cp1251: без этого миграция падает не на SQL, а
+# на печати стрелки в собственном логе (как в cli.py).
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
+    except (AttributeError, ValueError):
+        pass
 
 config = context.config
 if config.config_file_name is not None:
