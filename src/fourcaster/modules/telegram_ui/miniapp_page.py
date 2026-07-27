@@ -24,6 +24,7 @@ HTML = r'''<!doctype html>
     --brand:#ff6b35; --brand-ink:#ff8a5c; --brand-wash:#3a2116;
     --accent:#ff6b35; --precip:#6f9bd0;
     --g:#4bbf7f; --a:#e0b13e; --o:#f0783a; --r:#ec5648;
+    --p0:#35597c; --p1:#43759f; --p2:#548ec2; --p3:#6fa9dd; --p4:#95c5f0; --p5:#c0defc;
     --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 26px rgba(0,0,0,.5);
   }
   @media (prefers-color-scheme:light){:root{
@@ -32,6 +33,7 @@ HTML = r'''<!doctype html>
     --brand:#e85a26; --brand-ink:#c74a1c; --brand-wash:#ffe9df;
     --accent:#e85a26; --precip:#3f74b8;
     --g:#2f9e6a; --a:#bf8c18; --o:#e8632a; --r:#dc4433;
+    --p0:#93bbe0; --p1:#75a5d5; --p2:#5a8cc4; --p3:#4272aa; --p4:#2c588c; --p5:#183f6d;
     --shadow:0 1px 2px rgba(20,25,35,.06),0 6px 18px rgba(20,25,35,.10);
   }}
   :root[data-theme="dark"]{
@@ -40,6 +42,7 @@ HTML = r'''<!doctype html>
     --brand:#ff6b35; --brand-ink:#ff8a5c; --brand-wash:#3a2116;
     --accent:#ff6b35; --precip:#6f9bd0;
     --g:#4bbf7f; --a:#e0b13e; --o:#f0783a; --r:#ec5648;
+    --p0:#35597c; --p1:#43759f; --p2:#548ec2; --p3:#6fa9dd; --p4:#95c5f0; --p5:#c0defc;
     --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 26px rgba(0,0,0,.5);
   }
   :root[data-theme="light"]{
@@ -48,9 +51,10 @@ HTML = r'''<!doctype html>
     --brand:#e85a26; --brand-ink:#c74a1c; --brand-wash:#ffe9df;
     --accent:#e85a26; --precip:#3f74b8;
     --g:#2f9e6a; --a:#bf8c18; --o:#e8632a; --r:#dc4433;
+    --p0:#93bbe0; --p1:#75a5d5; --p2:#5a8cc4; --p3:#4272aa; --p4:#2c588c; --p5:#183f6d;
     --shadow:0 1px 2px rgba(20,25,35,.06),0 6px 18px rgba(20,25,35,.10);
   }
-  .card,.chart,.days,.rel,.cmp,.hm,.hero{box-shadow:var(--shadow)}
+  .card,.blk,.days,.rel,.cmp,.hero{box-shadow:var(--shadow)}
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   body{margin:0;background:var(--bg);color:var(--ink);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
@@ -84,9 +88,17 @@ HTML = r'''<!doctype html>
   .dhead{display:flex;justify-content:space-between;align-items:baseline;margin:4px 2px 12px}
   .dhead .loc{font-size:20px;font-weight:750;letter-spacing:-.01em}
 
-  /* weekly chart */
-  .chart{background:var(--surface);border:1px solid var(--hair);border-radius:16px;padding:12px 10px 6px;
-    margin-bottom:10px}
+  /* блок-подложка: единая карточка для всех виджетов экрана прогноза —
+     заголовок, содержимое и пояснение живут на одной поверхности */
+  .blk{background:var(--surface);border:1px solid var(--hair);border-radius:16px;
+    padding:13px 14px;margin-bottom:10px}
+  .blk>h4{margin:0 0 8px;font-size:14px;display:flex;align-items:baseline;gap:7px;flex-wrap:wrap}
+  .blk>h4 .tiny{font-weight:400}
+  .blk .skel{margin:0}
+  .story{font-size:12px;color:var(--ink2);line-height:1.5;margin-bottom:4px}
+  .story b{color:var(--ink)}
+  /* графики: сам SVG без собственной подложки — её даёт .blk */
+  .chart{margin-top:8px}
   .chart svg{display:block;width:100%;height:auto}
   .chart .cl{display:flex;gap:12px;font-size:9.5px;color:var(--ink2);padding:6px 2px 0;flex-wrap:wrap}
   .chart .cl span{display:inline-flex;gap:5px;align-items:center}
@@ -123,8 +135,6 @@ HTML = r'''<!doctype html>
     display:flex;flex-direction:column;align-items:flex-end;gap:1px;line-height:1.1}
   .pop .lbl{font-size:8.5px;color:var(--ink3);font-weight:600}
   .dd{width:8px;height:8px;border-radius:50%}
-  /* заголовок инлайн-секции (почасовой / история) */
-  .sec-h{margin:16px 2px 8px;font-size:14px;font-weight:700;display:flex;align-items:center;gap:7px}
   /* multi-day strip on location cards */
   .strip{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:11px}
   .dcell{text-align:center;padding:5px 0 4px;border-radius:9px;background:var(--surface2)}
@@ -188,7 +198,7 @@ HTML = r'''<!doctype html>
   .cmp .v small{color:var(--ink3);font-weight:500}
 
   /* history heatmap */
-  .hm{background:var(--surface);border:1px solid var(--hair);border-radius:16px;padding:12px}
+  .hm{margin-top:10px}
   .hmrow{display:grid;grid-template-columns:54px 1fr;gap:6px;align-items:center;margin-bottom:2px}
   .hm .yl{font-size:9.5px;color:var(--ink3);font-weight:600;text-align:right;white-space:nowrap}
   .hm .yl b{color:var(--ink2);font-weight:700}
@@ -205,7 +215,7 @@ HTML = r'''<!doctype html>
   .hm-hd span.last{color:var(--brand);font-weight:700}
   .scale{display:flex;align-items:center;gap:7px;font-size:9.5px;color:var(--ink2);margin-top:10px}
   .scale .grad{flex:1;height:7px;border-radius:4px;
-    background:linear-gradient(90deg,var(--g),var(--a),var(--o),var(--r))}
+    background:linear-gradient(90deg,var(--p0),var(--p2),var(--p3),var(--p4),var(--p5))}
   .state{text-align:center;color:var(--ink2);padding:40px 12px;font-size:14px}
   .back{background:none;border:0;color:var(--brand);font:inherit;font-size:14px;font-weight:600;
     padding:6px 0;cursor:pointer;margin-bottom:4px}
@@ -275,6 +285,12 @@ function applyTheme(){
 if(tg){ tg.ready(); tg.expand(); tg.onEvent('themeChanged', applyTheme); }
 applyTheme();
 const HIL_IC=['☁️','🌦','🌧','🌧','🌧','⛈'];
+// Шкала осадков — один синий тон, светлее → насыщеннее по уровню HIL 0..5
+// (проверена валидатором палитры: монотонная светлота, различима при CVD).
+// Зелёный/жёлтый/красный оставлены статусам (надёжность, вердикт), чтобы один
+// цвет не значил в соседних блоках то «сухо», то «надёжно».
+const PC=['var(--p0)','var(--p1)','var(--p2)','var(--p3)','var(--p4)','var(--p5)'];
+const HIL_W=['сухо','морось','слабый','дождь','сильный','ливень'];
 const WD=['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
 const MAX=60;
 const CB=['bg-g','bg-a','bg-o','bg-r'], CW=['надёжно','осторожно','низкая','не опираться'];
@@ -287,8 +303,8 @@ const LVL_DESC=[
   'разнобой моделей — прогноз не устоялся, не планируйте по нему'];
 function modelsWord(n){const a=n%10,b=n%100;
   if(a===1&&b!==11)return'модель'; if(a>=2&&a<=4&&(b<10||b>=20))return'модели'; return'моделей';}
-const H_HOURLY='<h4 class="sec-h">🕐 Осадки · ближайшие 48 часов</h4>';
-const H_HIST='<h4 class="sec-h">📅 Как менялся прогноз</h4>';
+const H_HOURLY='<h4>🕐 Осадки · ближайшие 48 часов</h4>';
+const H_HIST='<h4>📅 Как менялся прогноз</h4>';
 function wd(iso){return WD[new Date(iso+'T00:00:00').getDay()]}
 function dm(iso){const d=new Date(iso+'T00:00:00');return String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0')}
 function g(v){return Math.round(v*10)/10}
@@ -441,38 +457,70 @@ async function loadHome(){
   }catch(e){view.innerHTML='<div class="state">Не удалось загрузить.</div>'}
 }
 
+// столбик с закруглённой верхушкой и прямым низом (стоит на базовой линии)
+function barPath(x,y,w,h,r){
+  const rr=Math.min(r,w/2,h);
+  return `M${x} ${y+h} V${y+rr} A${rr} ${rr} 0 0 1 ${x+rr} ${y} H${x+w-rr} A${rr} ${rr} 0 0 1 ${x+w} ${y+rr} V${y+h} Z`;
+}
+// человеческий пересказ недели: что вообще происходит с погодой
+function weeklyStory(days){
+  if(!days.length) return '';
+  let pk=0; days.forEach((d,i)=>{ if(d.p50>days[pk].p50) pk=i; });
+  const p=days[pk];
+  let dry=0; while(dry<days.length && days[dry].p50<0.5) dry++;
+  const wet=days.filter(d=>d.p50>=2).length;
+  if(p.p50<0.5) return `Осадков нет во всём горизонте — ни одного дня заметнее <b>0,5 мм</b>. Ограничение здесь не погода, а надёжность прогноза на дальних днях.`;
+  const parts=[`Самый мокрый день — <b>${wd(p.day)} ${dm(p.day)}</b>: ${g(p.p50)} мм, в худшем случае до ${g(p.p90)} мм (${p.hil_label.toLowerCase()}).`];
+  if(dry>=2) parts.push(`До него сухо: ближайшие <b>${dry} ${plural(dry,'день','дня','дней')}</b> без осадков.`);
+  else if(days[0].p50>=2) parts.push(`Мокро уже сегодня.`);
+  parts.push(wet ? `Дней с ощутимым дождём (от 2 мм): <b>${wet}</b> из ${days.length}.`
+                 : `Остальные дни — сухие или почти сухие.`);
+  return parts.join(' ');
+}
+function plural(n,a,b,c){const x=n%10,y=n%100;
+  if(x===1&&y!==11)return a; if(x>=2&&x<=4&&(y<10||y>=20))return b; return c;}
 function weeklyChart(days){
-  const W=300,H=132,pad=16,base=H-22,top=18;
+  const W=300,H=140,pad=16,base=H-30,top=18;
   const mx=Math.max(6,...days.map(d=>d.p90));
   const fmx=sq(mx);
   const bw=(W-2*pad)/days.length;
+  const barW=Math.min(15,bw*0.56);          // ≤24 px на экране: столбик не занимает всю ячейку
   const y=v=>base-(sq(v)/fmx)*(base-top);
   // засечки шкалы (мм) — бледные линии с подписью у правого края
   const ticks=[1,2,5,10,20,40,80].filter(t=>t<=mx);
   let grid=ticks.map(t=>`<line x1="${pad}" y1="${y(t)}" x2="${W-pad}" y2="${y(t)}" stroke="var(--hair)" stroke-width="0.6"></line>
     <text x="${W-pad+2}" y="${y(t)+2.5}" font-size="7" fill="var(--ink3)">${t}</text>`).join('');
   grid+=`<text x="${W-pad+2}" y="${top-6}" font-size="7" fill="var(--ink3)">мм</text>`;
-  let peak=0; days.forEach((d,i)=>{ if(d.p50>days[peak].p50) peak=i; });
+  // подписываем выборочно: три самых мокрых дня (иначе число над каждым столбцом — шум)
+  const labelled=new Set(days.map((d,i)=>i).filter(i=>days[i].p50>=1)
+    .sort((a,b)=>days[b].p50-days[a].p50).slice(0,3));
   let bars='',wsk='',lbl='',xl='';
   days.forEach((d,i)=>{
     const x=pad+i*bw+bw/2;
-    const bh=base-y(d.p50);
-    bars+=`<rect x="${x-bw*0.28}" y="${y(d.p50)}" width="${bw*0.56}" height="${Math.max(1,bh)}" rx="2" fill="var(--precip)"></rect>`;
-    wsk+=`<line x1="${x}" y1="${y(d.p10)}" x2="${x}" y2="${y(d.p90)}" stroke="var(--ink3)" stroke-width="1.4"></line>
-      <line x1="${x-3}" y1="${y(d.p90)}" x2="${x+3}" y2="${y(d.p90)}" stroke="var(--ink3)" stroke-width="1.4"></line>`;
-    // подписи — только пик и дни со значимым дождём (≥1 мм); сухие не подписываем
-    if(i===peak || Math.round(d.p50)>=1){
+    const bh=Math.max(1.5,base-y(d.p50));
+    const tip=`${wd(d.day)} ${dm(d.day)} · ${g(d.p50)} мм (${g(d.p10)}–${g(d.p90)}) · ${d.hil_label} · вероятность ${Math.round(d.pop*100)}%`;
+    bars+=`<path d="${barPath(x-barW/2,base-bh,barW,bh,3)}" fill="${PC[d.hil_level]}"><title>${tip}</title></path>`;
+    wsk+=`<line x1="${x}" y1="${y(d.p10)}" x2="${x}" y2="${y(d.p90)}" stroke="var(--ink3)" stroke-width="1.2"></line>
+      <line x1="${x-3}" y1="${y(d.p90)}" x2="${x+3}" y2="${y(d.p90)}" stroke="var(--ink3)" stroke-width="1.2"></line>`;
+    if(labelled.has(i)){
+      // подпись выше уса p90, иначе цифра ложится на его засечку
       const lx=Math.min(W-11,Math.max(11,x));
-      lbl+=`<text x="${lx}" y="${Math.max(8,y(d.p50)-3)}" font-size="7.5" fill="var(--ink)" text-anchor="middle" style="font-variant-numeric:tabular-nums">${g(d.p50)}</text>`;
+      lbl+=`<text x="${lx}" y="${Math.max(7,Math.min(y(d.p50),y(d.p90))-4)}" font-size="7.5" fill="var(--ink)" text-anchor="middle" style="font-variant-numeric:tabular-nums">${g(d.p50)}</text>`;
     }
-    xl+=`<text x="${x}" y="${H-6}" font-size="8.5" fill="var(--ink3)" text-anchor="middle">${wd(d.day)}</text>`;
+    // дата под днём недели: 14 столбцов, «Вт» без числа встречается дважды
+    xl+=`<text x="${x}" y="${H-13}" font-size="8.5" fill="var(--ink3)" text-anchor="middle">${wd(d.day)}</text>
+      <text x="${x}" y="${H-4}" font-size="7" fill="var(--ink3)" text-anchor="middle">${new Date(d.day+'T00:00:00').getDate()}</text>`;
   });
-  return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Осадки по дням, √-шкала">
+  return `<div class="story">${weeklyStory(days)}</div>
+    <div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Осадки по дням, √-шкала">
     ${grid}
     <line x1="${pad}" y1="${base}" x2="${W-pad}" y2="${base}" stroke="var(--hair2)"></line>
     ${bars}${wsk}${lbl}${xl}</svg>
-    <div class="cl"><span><i class="sw" style="background:var(--precip)"></i>p50, мм/сут · √-шкала</span>
-    <span><i class="sw" style="background:var(--ink3)"></i>разброс: в лучшем → в худшем случае</span></div></div>`;
+    <div class="cl"><span><i class="sw" style="background:var(--ink3)"></i>усы — разброс моделей: в лучшем → в худшем случае</span></div></div>
+    <div class="scale"><span>сухо</span><div class="grad"></div><span>ливень</span></div>
+    <div class="note">Высота столбца — медиана суточных осадков (p50), цвет — насколько это мешает походу
+    (${HIL_W.join(' · ')}). Шкала по высоте — корневая: иначе один ливень «сплющивает» все остальные дни
+    до нуля. Подписаны три самых мокрых дня, остальные значения — в списке ниже.</div>`;
 }
 
 function relBlock(d){
@@ -539,10 +587,13 @@ async function loadForecast(id){
       <div class="row" style="margin:0 2px 10px">
         <button class="pill ok" onclick="showModels(${d.n_models})">🛰 ${d.n_models} ${modelsWord(d.n_models)} ⓘ</button>
         <span class="tiny">обновлено ${String(upd.getHours()).padStart(2,'0')}:${String(upd.getMinutes()).padStart(2,'0')}</span></div>
-      <section id="secHourly">${H_HOURLY}<div class="skel"></div></section>
-      ${hikeHero(d.days)}${weeklyChart(d.days)}${relBlock(d)}<div class="days">${leg}${rows}
+      <section id="secHourly" class="blk">${H_HOURLY}<div class="skel"></div></section>
+      ${hikeHero(d.days)}
+      <div class="blk"><h4>🌧 Осадки по дням <span class="tiny">— ${d.days.length} ${plural(d.days.length,'день','дня','дней')}</span></h4>
+        ${weeklyChart(d.days)}</div>
+      ${relBlock(d)}<div class="days">${leg}${rows}
       <div class="tiny" style="padding:8px 2px 4px;line-height:1.4">* у последнего дня прогноза на следующие сутки ещё нет — оценка «с ночёвкой» предварительна.</div></div>
-      <section id="secHistory">${H_HIST}<div class="skel"></div></section>`;
+      <section id="secHistory" class="blk">${H_HIST}<div class="skel"></div></section>`;
     hydrateHourly(id); hydrateHistory(id);
   }catch(e){view.innerHTML='<div class="state">Прогноз ещё не рассчитан.</div>'}
 }
@@ -614,9 +665,9 @@ async function hydrateHourly(id){
 
 function heatColor(v,mx){
   if(v==null) return 'var(--surface3)';
-  // green (dry) -> amber -> orange -> red (downpour)
+  // та же шкала осадков, что у столбиков: сухо → ливень, один тон
   const t=Math.min(v,mx)/(mx||1);
-  const stops=['var(--g)','var(--a)','var(--o)','var(--r)'];
+  const stops=PC;
   const seg=t*(stops.length-1), i=Math.min(Math.floor(seg),stops.length-2);
   const f=Math.round((seg-i)*100);
   return `color-mix(in srgb,${stops[i+1]} ${f}%,${stops[i]})`;
@@ -643,10 +694,13 @@ function historyHeatmap(h){
       const cells=r.vals.map((v,i)=>`<i style="background:${heatColor(v,rmax)}" title="${stamps[i]} → ${v==null?'нет данных':Math.round(v*10)/10+' мм'}"></i>`).join('');
       return `<div class="hmrow"><span class="yl"><b>${wd(r.date)}</b> ${dm(r.date)}</span><div class="cells" style="${gtc}">${cells}</div></div>`;
     }).join('');
-    return `<div class="muted" style="font-size:11px;margin:0 2px 10px">Строки — прогнозируемая дата, столбцы — момент выпуска прогноза (${n}, последний выделен). Цвет — осадки p50 относительно этого же дня: у каждой строки своя шкала, чтобы видеть, как менялся прогноз именно на эту дату.</div>
-      <div class="hm">${head}${body}
-        <div class="scale"><span>меньше</span><div class="grad"></div><span>больше</span></div></div>
-      <div class="note" style="margin-top:10px">Стабильные столбцы справа — прогноз «устаканился». Скачки — модели меняли мнение. Накапливается автоматически каждые 4 часа.</div>`;
+    return `<div class="story">Строки — прогнозируемая дата, столбцы — момент выпуска прогноза (${n}, последний выделен).
+      Цвет — осадки p50 <b>относительно этого же дня</b>: у каждой строки своя шкала, чтобы было видно,
+      как менялось мнение моделей именно про эту дату.</div>
+      <div class="hm">${head}${body}</div>
+      <div class="scale"><span>сухо</span><div class="grad"></div><span>ливень</span></div>
+      <div class="note">Стабильные столбцы справа — прогноз «устаканился». Скачки — модели меняли мнение.
+      Накапливается автоматически каждые 4 часа.</div>`;
 }
 async function hydrateHistory(id){
   const box=document.getElementById('secHistory'); if(!box) return;
