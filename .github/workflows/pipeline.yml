@@ -11,8 +11,8 @@ on:
   workflow_dispatch:
     inputs:
       locations:
-        description: "ID локаций через пробел"
-        default: "achishkho aibga"
+        description: "ID локаций через пробел (пусто — весь опубликованный каталог)"
+        default: ""
 
 concurrency:
   group: forecast-pipeline

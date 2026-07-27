@@ -33,6 +33,8 @@ class Location:
     coord: Coordinate
     elevation_m: int
     cluster: str
+    conf: str = "M"          # уверенность в координате: H / M / L (§7.3)
+    is_draft: bool = False   # FR-LOC-5: черновая точка, пользователям не видна
 
     @property
     def lat(self) -> float:

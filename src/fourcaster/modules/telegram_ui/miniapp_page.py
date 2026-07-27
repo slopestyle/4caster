@@ -88,6 +88,23 @@ HTML = r'''<!doctype html>
   .pill.ok{color:var(--brand)}
   .pill.stale{color:var(--a);background:color-mix(in srgb,var(--a) 16%,var(--surface3))}
 
+  /* поиск по каталогу + легенда под «?» */
+  .tools{display:flex;gap:8px;margin-bottom:10px}
+  .srch{flex:1;min-width:0;background:var(--surface2);border:1px solid var(--hair);border-radius:12px;
+    color:var(--ink);font:inherit;font-size:14px;padding:9px 12px;-webkit-appearance:none}
+  .srch::placeholder{color:var(--ink3)}
+  .srch:focus{outline:none;border-color:var(--brand)}
+  .qmark{flex:none;width:38px;background:var(--surface2);border:1px solid var(--hair);border-radius:12px;
+    color:var(--ink2);font:inherit;font-size:15px;font-weight:700;cursor:pointer}
+  .qmark:active{background:var(--surface3)}
+  .grp{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin:16px 2px 8px;
+    font-size:11px;font-weight:700;color:var(--ink2);text-transform:uppercase;letter-spacing:.05em}
+  .grp:first-child{margin-top:2px}
+  .grp b{color:var(--ink3);font-weight:600;letter-spacing:0;text-transform:none;font-size:11px}
+  .legrow{display:flex;align-items:center;gap:9px;font-size:12px;color:var(--ink2);
+    padding:7px 0;border-top:1px solid var(--hair)}
+  .legrow b{color:var(--ink)}
+
   .dhead{display:flex;justify-content:space-between;align-items:baseline;margin:4px 2px 12px}
   .dhead .loc{font-size:20px;font-weight:750;letter-spacing:-.01em}
 
@@ -510,32 +527,75 @@ document.getElementById('seg').addEventListener('click',e=>{
 
 async function api(u){const r=await fetch(u); if(!r.ok) throw new Error(r.status); return r.json();}
 
+// Легенда переехала в поп-ап под «?»: на главной с двумя десятками точек
+// три строки подписей съедали первый экран.
+function showLegend(){
+  const row=(mark,txt)=>`<div class="legrow">${mark}<span>${txt}</span></div>`;
+  openSheet(`<div class="sheet-hd"><h4>❓ Что на карточке точки</h4>
+    <button class="x" data-close aria-label="Закрыть">✕</button></div>
+    <div class="mtxt">Под каждым днём — два ответа на вопрос «идти или нет»: кружок для
+    однодневного выхода и квадрат для выхода с ночёвкой (он смотрит ещё и на следующий день).</div>
+    ${row('<i class="dd bg-g"></i><i class="sq bg-g"></i>','<b>идти</b> — осадки походу не мешают')}
+    ${row('<i class="dd bg-a"></i><i class="sq bg-a"></i>','<b>можно</b> — намокнете, но день рабочий')}
+    ${row('<i class="dd bg-o"></i><i class="sq bg-o"></i>','<b>спорно</b> — решение под вопросом, нужен запас')}
+    ${row('<i class="dd bg-r"></i><i class="sq bg-r"></i>','<b>не идти</b> — день против вас')}
+    ${row('<i class="dd" style="background:var(--ink3)"></i>','кружок — <b>однодневный выход</b>')}
+    ${row('<i class="sq" style="background:var(--ink3)"></i>','квадрат — <b>с ночёвкой</b>')}
+    ${row('<i class="sq" style="background:var(--brand-wash);outline:1px solid var(--brand)"></i>','рамка — <b>самый сухой день</b> в этой точке')}
+    <div class="note">Число под иконкой — осадки за сутки (основной сценарий, мм). Вердикт
+    учитывает и количество осадков, и то, насколько модели между собой согласны.
+    Нажмите на точку — там разбор по дням, метеограмма на 48 часов и надёжность.</div>`);
+}
+function locCard(l){
+  const t=l.today;
+  if(!t) return `<button class="card" onclick="loadForecast('${l.id}')">
+    <div class="row"><div><div class="loc">${l.name}</div>
+      <div class="tiny">${l.elevation_m} м</div></div>
+      <span class="pill">нет расчёта</span></div></button>`;
+  const today=`<span class="band-num">сегодня <b>${g(t.p50)}</b> <u>(${g(t.p10)}–${g(t.p90)})</u> мм · ${Math.round(t.pop*100)}%</span>`;
+  return `<button class="card" onclick="loadForecast('${l.id}')">
+    <div class="row"><div><div class="loc">${HIL_IC[t.hil_level]} ${l.name}</div>
+      <div class="tiny">${l.elevation_m} м</div></div>
+      <span class="pill ok">${horizon(t.day,l.days_total)} →</span></div>
+    <div style="margin-top:8px">${today}</div>
+    ${dayStrip(l.days||[])}</button>`;
+}
+const norm=s=>(s||'').toLowerCase().replace(/ё/g,'е').trim();
+// список точек: фильтр по названию/району + группировка по горным районам
+function renderList(q){
+  const box=document.getElementById('list'); if(!box) return;
+  const needle=norm(q);
+  const locs=(CACHE.locs||[]).filter(l=>!needle
+    || norm(l.name).includes(needle) || norm(l.cluster_name).includes(needle));
+  if(!locs.length){
+    box.innerHTML=`<div class="state">По запросу «${q}» ничего нет.<br>
+      <span class="tiny">Попробуйте название точки или района: Фишт, Арабика, Кодор…</span></div>`;
+    return;
+  }
+  const order=[], byCluster=new Map();
+  locs.forEach(l=>{ if(!byCluster.has(l.cluster)){ byCluster.set(l.cluster,[]); order.push(l.cluster); }
+    byCluster.get(l.cluster).push(l); });
+  box.innerHTML=order.map(k=>{
+    const grp=byCluster.get(k);
+    return `<div class="grp"><span>${grp[0].cluster_name||k}</span>
+      <b>${grp.length} ${plural(grp.length,'точка','точки','точек')}</b></div>${grp.map(locCard).join('')}`;
+  }).join('');
+}
 async function loadHome(){
   closeModal();
   if(tg&&tg.BackButton) tg.BackButton.hide();
   view.innerHTML='<div class="skel"></div><div class="skel"></div>';
   try{
-    const d=await api('/api/locations'); CACHE.locs=d.locations;
-    const hint=`<div class="hint">
-      <span><b>стоит ли идти:</b></span>
-      <span><i class="dd bg-g"></i>идти</span><span><i class="dd bg-a"></i>можно</span>
-      <span><i class="dd bg-o"></i>спорно</span><span><i class="dd bg-r"></i>не идти</span>
-      <span style="flex-basis:100%;height:0"></span>
-      <span><i class="dd" style="background:var(--ink3)"></i>кружок — <b>днём</b></span>
-      <span><i class="sq" style="background:var(--ink3)"></i>квадрат — <b>с ночёвкой</b></span>
-      <span>рамка — самый сухой день</span></div>`;
-    view.innerHTML=hint+d.locations.map(l=>{
-      const t=l.today;
-      if(!t) return `<button class="card" onclick="loadForecast('${l.id}')">
-        <div class="loc">${l.name}</div><div class="tiny">${l.elevation_m} м · нет данных</div></button>`;
-      const today=`<span class="band-num">сегодня <b>${g(t.p50)}</b> <u>(${g(t.p10)}–${g(t.p90)})</u> мм · ${Math.round(t.pop*100)}%</span>`;
-      return `<button class="card" onclick="loadForecast('${l.id}')">
-        <div class="row"><div><div class="loc">${HIL_IC[t.hil_level]} ${l.name}</div>
-          <div class="tiny">${l.elevation_m} м · ${l.cluster}</div></div>
-          <span class="pill ok">${horizon(t.day,l.days_total)} →</span></div>
-        <div style="margin-top:8px">${today}</div>
-        ${dayStrip(l.days||[])}</button>`;
-    }).join('')||'<div class="state">Пока нет локаций.</div>';
+    if(!CACHE.locs) CACHE.locs=(await api('/api/locations')).locations;
+    if(!CACHE.locs.length){ view.innerHTML='<div class="state">Пока нет локаций.</div>'; return; }
+    view.innerHTML=`<div class="tools">
+        <input id="q" class="srch" type="search" placeholder="Поиск точки или района"
+          autocomplete="off" spellcheck="false" value="${CACHE.q||''}">
+        <button class="qmark" onclick="showLegend()" aria-label="Что значат значки">?</button>
+      </div><div id="list"></div>`;
+    const inp=document.getElementById('q');
+    inp.addEventListener('input',()=>{ CACHE.q=inp.value; renderList(inp.value); });
+    renderList(CACHE.q||'');
   }catch(e){view.innerHTML='<div class="state">Не удалось загрузить.</div>'}
 }
 

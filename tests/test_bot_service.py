@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fourcaster.modules.locations import CATALOG
+from fourcaster.modules.locations import CATALOG, published
 from fourcaster.modules.telegram_ui import service
 from fourcaster.modules.telegram_ui.keyboards import (
     FORECAST_CB_PREFIX,
@@ -11,14 +11,14 @@ from fourcaster.modules.telegram_ui.keyboards import (
 )
 
 
-def test_keyboard_has_button_per_location_and_help():
+def test_keyboard_has_button_per_published_location_and_help():
     kb = locations_keyboard()
     buttons = [b for row in kb.inline_keyboard for b in row]
-    fc_buttons = [b for b in buttons if b.callback_data.startswith(FORECAST_CB_PREFIX)]
-    assert len(fc_buttons) == len(CATALOG)
-    for b in fc_buttons:
-        loc_id = b.callback_data[len(FORECAST_CB_PREFIX):]
-        assert loc_id in CATALOG
+    fc_buttons = [b for b in buttons if (b.callback_data or "").startswith(FORECAST_CB_PREFIX)]
+    ids = {b.callback_data[len(FORECAST_CB_PREFIX):] for b in fc_buttons}
+    # кнопки ровно по опубликованным точкам: черновые (Conf=L) наружу не выходят
+    assert ids == set(published())
+    assert all(not CATALOG[i].is_draft for i in ids)
     # кнопка легенды присутствует
     assert any(b.callback_data == HELP_CB for b in buttons)
 
@@ -30,12 +30,12 @@ def test_help_reply_explains_parameters():
         assert token in r.text
 
 
-def test_start_reply_mentions_locations_and_has_keyboard():
+def test_start_reply_counts_published_locations_and_has_keyboard():
+    # перечислять два десятка названий в приветствии бессмысленно — там счётчик
     r = service.start_reply()
     assert "4CASTER" in r.text
     assert r.keyboard is not None
-    for loc in CATALOG.values():
-        assert loc.name in r.text
+    assert str(len(published())) in r.text
 
 
 def test_locations_reply_has_keyboard():

@@ -16,7 +16,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.engine import Engine
 
-from fourcaster.modules.locations import CATALOG, get_location
+from fourcaster.modules.locations import CLUSTERS, get_location, published
 from fourcaster.modules.telegram_ui.bot import create_bot, create_dispatcher
 from fourcaster.modules.telegram_ui.miniapp_page import HTML as MINIAPP_HTML
 from fourcaster.platform.config import telegram_token, telegram_webhook_secret
@@ -68,11 +68,12 @@ async def api_locations() -> dict:
     _, _, engine = _components()
     cards = list_cards(engine)
     locations = []
-    for loc in CATALOG.values():
+    for loc in published().values():          # черновые точки не публикуем (FR-LOC-5)
         c = cards.get(loc.id)
         locations.append({
             "id": loc.id, "name": loc.name,
             "elevation_m": loc.elevation_m, "cluster": loc.cluster,
+            "cluster_name": CLUSTERS.get(loc.cluster, loc.cluster),
             "computed_at": c["computed_at"] if c else None,
             "today": c["today"] if c else None,
             "days": c["days"] if c else [],
@@ -96,6 +97,7 @@ async def api_forecast(location: str) -> dict:
         "location": {
             "id": loc.id, "name": loc.name,
             "elevation_m": loc.elevation_m, "cluster": loc.cluster,
+            "cluster_name": CLUSTERS.get(loc.cluster, loc.cluster),
         },
         **data,
     }

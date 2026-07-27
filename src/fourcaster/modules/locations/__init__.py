@@ -4,6 +4,11 @@
 seed-миграция (FR-LOC-3), добавление локации без деплоя кода.
 """
 
-from fourcaster.modules.locations.catalog import CATALOG, get_location
+from fourcaster.modules.locations.catalog import (
+    CATALOG,
+    CLUSTERS,
+    get_location,
+    published,
+)
 
-__all__ = ["CATALOG", "get_location"]
+__all__ = ["CATALOG", "CLUSTERS", "get_location", "published"]

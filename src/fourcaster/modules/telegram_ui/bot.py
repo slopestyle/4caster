@@ -17,6 +17,7 @@ from fourcaster.modules.telegram_ui import service
 from fourcaster.modules.telegram_ui.keyboards import (
     FORECAST_CB_PREFIX,
     HELP_CB,
+    LIST_CB,
     SUB_CB_PREFIX,
     UNSUB_CB_PREFIX,
 )
@@ -34,6 +35,14 @@ async def on_start(message: Message) -> None:
 async def on_help(message: Message) -> None:
     r = service.help_reply()
     await message.answer(r.text, reply_markup=r.keyboard)
+
+
+@router.callback_query(F.data == LIST_CB)
+async def on_locations_button(callback: CallbackQuery) -> None:
+    r = service.locations_reply()
+    if isinstance(callback.message, Message):
+        await callback.message.answer(r.text, reply_markup=r.keyboard)
+    await callback.answer()
 
 
 @router.callback_query(F.data == HELP_CB)

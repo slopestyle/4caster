@@ -13,7 +13,7 @@ from aiogram.types import InlineKeyboardMarkup
 from sqlalchemy.engine import Engine
 
 from fourcaster.modules.consensus.calculator import DayConsensus
-from fourcaster.modules.locations import CATALOG, get_location
+from fourcaster.modules.locations import CATALOG, get_location, published
 from fourcaster.modules.telegram_ui.renderers import render_forecast_card
 from fourcaster.modules.telegram_ui.keyboards import (
     forecast_keyboard,
@@ -58,19 +58,36 @@ class BotReply:
     keyboard: InlineKeyboardMarkup | None = None
 
 
+def _plural(n: int, one: str, few: str, many: str) -> str:
+    a, b = n % 10, n % 100
+    if a == 1 and b != 11:
+        return one
+    if 2 <= a <= 4 and not (10 <= b < 20):
+        return few
+    return many
+
+
 def start_reply() -> BotReply:
-    names = " · ".join(loc.name for loc in CATALOG.values())
+    pub = published()
+    n_clusters = len({loc.cluster for loc in pub.values()})
     text = (
         "🏔 <b>4CASTER</b> — не прогноз погоды, а помощь в решении: идти в горы или нет.\n\n"
         "Показываю консенсус нескольких метеомоделей и честно — насколько ему можно верить.\n\n"
-        f"Доступные точки: {names}\n\n"
-        "Откройте приложение — все локации, прогнозы и надёжность внутри."
+        f"Сейчас в каталоге <b>{len(pub)} {_plural(len(pub), 'точка', 'точки', 'точек')}</b> "
+        f"в {n_clusters} горных {_plural(n_clusters, 'районе', 'районах', 'районах')} — "
+        "от Красной Поляны до Кодорского ущелья.\n\n"
+        "Откройте приложение — все точки, поиск, прогнозы и надёжность внутри."
     )
     return BotReply(text, start_keyboard())
 
 
 def locations_reply() -> BotReply:
-    return BotReply("Выберите локацию:", locations_keyboard())
+    pub = published()
+    text = (
+        f"Выберите точку — их {len(pub)}. "
+        "В приложении есть поиск и группировка по районам."
+    )
+    return BotReply(text, locations_keyboard())
 
 
 HELP_TEXT = (

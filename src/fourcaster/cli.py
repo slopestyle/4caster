@@ -1,7 +1,8 @@
 """Композиционный корень среза (упрощённый аналог main.py, §11.3).
 
 Собирает конвейер §10.1 для одной команды и печатает карточки прогноза
-по локациям. По умолчанию — Ачишхо и Аибга.
+по локациям. По умолчанию — все опубликованные точки каталога §7.3
+(черновые с Conf=L пропускаем, FR-LOC-5).
 
 Запуск:
     python -m fourcaster.cli                 # живой запрос к Open-Meteo
@@ -24,7 +25,7 @@ from fourcaster.modules.ingestion.infrastructure.openmeteo.client import (
     OpenMeteoProvider,
     parse_daily_payload,
 )
-from fourcaster.modules.locations import get_location
+from fourcaster.modules.locations import get_location, published
 from fourcaster.modules.telegram_ui import render_forecast_card
 
 _FIXTURE_DIR = Path(__file__).resolve().parents[2] / "tests" / "fixtures"
@@ -65,14 +66,15 @@ def build_card(location_id: str, *, days: int, offline: bool) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="fourcaster", description="4CASTER slice")
-    parser.add_argument("locations", nargs="*", default=["achishkho", "aibga"],
-                        help="ID локаций (по умолчанию: achishkho aibga)")
+    parser.add_argument("locations", nargs="*",
+                        help="ID локаций (по умолчанию — весь опубликованный каталог)")
     parser.add_argument("-d", "--days", type=int, default=14, help="Горизонт, суток")
     parser.add_argument("--offline", action="store_true",
                         help="Использовать записанную фикстуру вместо сети")
     parser.add_argument("--save", action="store_true",
                         help="Записать карточки в Postgres (read-модель)")
     args = parser.parse_args(argv)
+    location_ids = args.locations or list(published())
 
     # Windows-консоль по умолчанию cp1251 и не печатает emoji — принудительно UTF-8.
     for stream in (sys.stdout, sys.stderr):
@@ -92,7 +94,7 @@ def main(argv: list[str] | None = None) -> int:
         except Exception:  # noqa: BLE001 — без токена просто не рассылаем
             token = None
 
-    for i, loc_id in enumerate(args.locations):
+    for i, loc_id in enumerate(location_ids):
         try:
             location, consensus, card, computed_at = compute_location(
                 loc_id, days=args.days, offline=args.offline
