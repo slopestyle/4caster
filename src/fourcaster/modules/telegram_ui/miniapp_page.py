@@ -105,7 +105,7 @@ HTML = r'''<!doctype html>
   .chart .cl span{display:inline-flex;gap:5px;align-items:center}
   .sw{width:10px;height:10px;border-radius:3px;display:inline-block}
 
-  .days{margin:0 -2px}
+  .days{margin:0}
   .dayleg{font-size:10.5px;color:var(--ink3);display:flex;gap:14px;flex-wrap:wrap;
     padding:9px 2px 7px;border-bottom:1px solid var(--hair);line-height:1.4}
   .dayleg span{display:inline-flex;gap:5px;align-items:center}
@@ -126,8 +126,7 @@ HTML = r'''<!doctype html>
   .bw .track{margin-top:8px}
   .track{position:relative;height:7px;border-radius:4px;background:var(--surface3);overflow:hidden}
   .rng{position:absolute;top:0;bottom:0;border-radius:4px;background:var(--brand)}
-  .p50{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--ink);border-radius:2px;
-    box-shadow:0 0 0 2px var(--surface)}
+  .p50{position:absolute;top:0;bottom:0;width:2px;border-radius:1px;background:var(--ink)}
   /* надёжность у полосы разброса — что она и оценивает */
   .rel-inline{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600}
   .rel-inline .dd{width:9px;height:9px}
@@ -151,7 +150,12 @@ HTML = r'''<!doctype html>
   .rel h4{margin:0 0 10px;font-size:14px}
   .relrow{display:flex;gap:8px;margin-bottom:10px}
   .relchip{flex:1;text-align:center;background:var(--surface2);border:1px solid var(--hair);border-radius:11px;
-    padding:9px 4px}
+    padding:9px 4px;font:inherit;color:inherit;cursor:pointer}
+  .relchip:active{background:var(--surface3)}
+  .relnums{display:grid;grid-template-columns:1fr 1fr;gap:5px 12px;margin:11px 0 3px;font-size:11.5px}
+  .relnums div{display:flex;justify-content:space-between;gap:8px;align-items:baseline;
+    border-bottom:1px solid var(--hair);padding-bottom:4px}
+  .relnums span{color:var(--ink2)} .relnums b{font-variant-numeric:tabular-nums;white-space:nowrap}
   .relchip .h{font-size:9.5px;color:var(--ink3);font-weight:700}
   .relchip .dot{width:11px;height:11px;border-radius:50%;margin:5px auto 3px}
   .relchip .w{font-size:9.5px;font-weight:600}
@@ -319,12 +323,70 @@ function band(d){
   const l=Math.max(0,S(d.p10)),w=Math.max(2,S(d.p90)-S(d.p10)),m=S(d.p50);
   return `<div class="track"><div class="rng" style="left:${l}%;width:${w}%"></div><div class="p50" style="left:${m}%"></div></div>`;
 }
-// качественная надёжность по относительному разбросу моделей + согласию
+// Качественная надёжность по относительному разбросу моделей + согласию.
+// ВАЖНО: относительный разброс на малых суммах взрывается (0 против 2 мм — это
+// «в два раза», хотя для похода разницы нет), поэтому сначала смотрим абсолютную
+// разницу сценариев: пока весь разброс умещается в одну операционную категорию,
+// модели по сути согласны, и надёжность не занижаем.
+// Границы категорий осадков (те же, что у HIL на сервере): сухо / морось /
+// слабый / дождь / сильный / ливень.
+const HIL_MM=[0.5,2,6,15,30];
+const hilOf=v=>{let i=0; while(i<HIL_MM.length && v>=HIL_MM[i]) i++; return i;};
+// Ключевой вопрос надёжности — не «на сколько процентов разошлись модели», а
+// «меняет ли этот разброс сам ответ». Поэтому сначала прогоняем лучший и худший
+// сценарии через вердикт хайкабельности: 0.4 мм против 2.1 мм формально
+// «в пять раз», но ответ в обоих случаях один. Относительный разброс включается
+// только тогда, когда сценарии реально ведут к разным решениям.
+const verdictAt=mm=>hikeLevel(HFAV[hilOf(mm)]);
 function confLevel(d,n){
+  const vlo=verdictAt(d.p10), vhi=verdictAt(d.p90), gap=vhi-vlo;
   const rel=(d.p90-d.p10)/Math.max(d.p50,2);
   let lvl = rel<0.35?0 : rel<0.8?1 : rel<1.4?2 : 3;
+  if(gap<=0) lvl=0;                        // ответ от разброса не меняется
+  else if(gap===1) lvl=Math.min(lvl,1);    // меняется на один шаг
   if(n<4) lvl=Math.min(3,lvl+1);
   return lvl;
+}
+// разбор конкретного дня для поп-апа: откуда взялся именно этот вердикт
+function relWhy(d){
+  const abs=d.p90-d.p10, rel=abs/Math.max(d.p50,2), lvl=confLevel(d,d.n_models);
+  const nm=i=>['сухо','морось','слабый дождь','дождь','сильный дождь','ливень'][i];
+  const vlo=verdictAt(d.p10), vhi=verdictAt(d.p90);
+  const lo=`${nm(hilOf(d.p10))}, ${g(d.p10)} мм`, hi=`${nm(hilOf(d.p90))}, ${g(d.p90)} мм`;
+  const why = vhi<=vlo
+    ? `Модели расходятся, но ответ от этого не меняется: и в лучшем сценарии (${lo}), и в худшем (${hi}) вердикт один — <b>${HW[vlo]}</b>. Спорить не о чем.`
+    : vhi-vlo===1
+      ? `В лучшем сценарии (${lo}) вердикт <b>${HW[vlo]}</b>, в худшем (${hi}) — <b>${HW[vhi]}</b>. Разброс сдвигает решение на один шаг: идти можно, но с запасом и с пересмотром ближе к дате.`
+      : `В лучшем сценарии (${lo}) вердикт <b>${HW[vlo]}</b>, в худшем (${hi}) — <b>${HW[vhi]}</b>. Это разные дни и разные решения — на такой прогноз опираться нельзя, надо ждать сближения моделей.`;
+  const cover = d.n_models>=5
+    ? `Считали <b>все 5 моделей</b> — дело не в нехватке данных, а в том, насколько модели сошлись.`
+    : `В расчёте <b>${d.n_models} из 5</b> моделей — оценка дополнительно снижена на один шаг.`;
+  return {lvl,abs,rel,why,cover};
+}
+function showReliability(iso){
+  const d=(CACHE.fc&&CACHE.fc.days||[]).find(x=>x.day===iso); if(!d) return;
+  const w=relWhy(d);
+  openSheet(`<div class="sheet-hd"><h4>📊 Надёжность · ${wd(d.day)} ${dm(d.day)}</h4>
+    <button class="x" data-close aria-label="Закрыть">✕</button></div>
+    <div class="mtop" style="margin:2px 0 8px"><b class="${GC[w.lvl]}">${CW[w.lvl]}</b>
+      <span class="tiny">${LVL_DESC[w.lvl]}</span></div>
+    <div class="mtxt">${w.why} ${w.cover}</div>
+    <div class="relnums">
+      <div><span>в лучшем случае</span><b>${g(d.p10)} мм</b></div>
+      <div><span>основной сценарий</span><b>${g(d.p50)} мм</b></div>
+      <div><span>в худшем случае</span><b>${g(d.p90)} мм</b></div>
+      <div><span>вероятность осадков</span><b>${Math.round(d.pop*100)}%</b></div>
+      <div><span>моделей в расчёте</span><b>${d.n_models}/5</b></div>
+      <div><span>ширина разброса</span><b>${g(w.abs)} мм</b></div>
+    </div>
+    <div class="note">Считаем так: сначала прогоняем <b>лучший и худший сценарии</b> через тот же
+    вердикт, что и на карточке дня. Ответ не меняется — надёжность высокая, даже если в
+    процентах разброс большой (0,4 против 2 мм — «в пять раз», а идти всё равно можно).
+    Меняется на один шаг — не хуже «осторожно». Меняется сильнее — смотрим величину
+    разброса относительно медианы: сейчас ${g(w.rel*100)}% (до 80% — осторожно, до 140% —
+    низкая, выше — не опираться). Меньше 4 моделей в расчёте — минус ещё шаг.</div>
+    <div class="note">Это оценка <b>по согласию моделей</b>, а не по их прошлой точности:
+    калиброванный скор (сверка прогноза с фактом на истории) — следующая фаза.</div>`);
 }
 // ── Хайкабельность: единый индикатор «идти / не идти» ───────────────────────
 // Свёртка трёх факторов в одну операционную категорию: критичность осадков
@@ -368,17 +430,25 @@ function hikeHero(days){
     <div class="hero-badges">${cell('🥾','однодневный',hd)}${cell('🏕','с ночёвкой',hn)}</div>
     <div class="note" style="margin-top:10px">Единый индикатор из трёх факторов: <b>критичность осадков</b> (HIL), <b>надёжность</b> прогноза и <b>разброс</b> моделей. Режим «с ночёвкой» смотрит на сегодня и завтра (риск мокрого лагеря). Это операционная подсказка, а не гарантия.</div></div>`;
 }
+// горизонт прогноза концом периода: после отсечения вчерашнего дня счётчик дней
+// «сам собой» уменьшался (14 → 13) и читался как потеря данных
+function horizon(firstDay,total){
+  if(!total) return 'нет данных';
+  const end=new Date(firstDay+'T00:00:00'); end.setDate(end.getDate()+total-1);
+  return `по ${dmt(end)}`;
+}
 function dayStrip(days){
   if(!days.length) return '';
   const up=days.slice(0,7);
   let driest=-1, best=1e9;
   up.forEach((d,i)=>{ if(i>0 && d.p50<best){ best=d.p50; driest=i; } });
   const cells=up.map((d,i)=>{
-    const lvl=confLevel(d,d.n_models);
+    const hv=hikeDay(d).lvl;                 // «идти / можно / спорно / не идти»
     const dry=(i===driest && best<2);
-    return `<div class="dcell ${dry?'dry':''}"><div class="wd">${wd(d.day)}</div>
+    return `<div class="dcell ${dry?'dry':''}" title="${wd(d.day)} ${dm(d.day)} · ${HW[hv]} · ${g(d.p50)} мм">
+      <div class="wd">${wd(d.day)}</div>
       <div class="di">${HIL_IC[d.hil_level]}</div><div class="mm">${g(d.p50)}</div>
-      <div class="dd ${CB[lvl]}"></div></div>`;
+      <div class="dd ${CB[hv]}"></div></div>`;
   }).join('');
   return `<div class="strip">${cells}</div>`;
 }
@@ -442,9 +512,10 @@ async function loadHome(){
   view.innerHTML='<div class="skel"></div><div class="skel"></div>';
   try{
     const d=await api('/api/locations'); CACHE.locs=d.locations;
-    const hint=`<div class="hint"><span><i class="dd bg-g"></i>надёжно</span>
-      <span><i class="dd bg-a"></i>осторожно</span><span><i class="dd bg-o"></i>низкая</span>
-      <span>рамка — сухой день</span></div>`;
+    const hint=`<div class="hint"><span>точка под днём — <b>стоит ли идти</b>:</span>
+      <span><i class="dd bg-g"></i>идти</span><span><i class="dd bg-a"></i>можно</span>
+      <span><i class="dd bg-o"></i>спорно</span><span><i class="dd bg-r"></i>не идти</span>
+      <span>рамка — самый сухой день</span></div>`;
     view.innerHTML=hint+d.locations.map(l=>{
       const t=l.today;
       if(!t) return `<button class="card" onclick="loadForecast('${l.id}')">
@@ -453,7 +524,7 @@ async function loadHome(){
       return `<button class="card" onclick="loadForecast('${l.id}')">
         <div class="row"><div><div class="loc">${HIL_IC[t.hil_level]} ${l.name}</div>
           <div class="tiny">${l.elevation_m} м · ${l.cluster}</div></div>
-          <span class="pill ok">${l.days_total||(l.days||[]).length} дн →</span></div>
+          <span class="pill ok">${horizon(t.day,l.days_total)} →</span></div>
         <div style="margin-top:8px">${today}</div>
         ${dayStrip(l.days||[])}</button>`;
     }).join('')||'<div class="state">Пока нет локаций.</div>';
@@ -527,12 +598,18 @@ function weeklyChart(days){
 }
 
 function relBlock(d){
-  const idx=[[0,'1 день'],[2,'3 дня'],[6,'7 дней'],[13,'14 дней']];
-  const chips=idx.filter(x=>d.days[x[0]]).map(([i,lab])=>{
+  const last=d.days.length-1;
+  // последний чип — конец горизонта, какой он есть: после отсечения прошедшего дня
+  // жёсткий индекс 13 просто исчезал, и субблок «14 дней» пропадал из блока
+  const idx=[...new Set([0,2,6,last])].filter(i=>i>=0&&d.days[i]).sort((a,b)=>a-b);
+  const chips=idx.map(i=>{
     const dd=d.days[i], lvl=confLevel(dd,dd.n_models);
-    return `<div class="relchip"><div class="h">${lab.toUpperCase()}</div>
+    const lab=`${i+1} ${plural(i+1,'день','дня','дней')}`;
+    return `<button class="relchip" onclick="showReliability('${dd.day}')"
+        title="${wd(dd.day)} ${dm(dd.day)}: ${g(dd.p50)} мм (${g(dd.p10)}–${g(dd.p90)}), ${dd.n_models}/5 моделей — нажмите, чтобы разобрать">
+      <div class="h">${lab.toUpperCase()}</div>
       <div class="dot ${CB[lvl]}"></div><div class="w ${GC[lvl]}">${CW[lvl]}</div>
-      <div class="relchip-n">${dd.n_models}/5 моделей</div></div>`;
+      <div class="relchip-n">${dd.n_models}/5 моделей</div></button>`;
   }).join('');
   const n=d.days[0]?d.days[0].n_models:d.n_models;
   const far=d.days[d.days.length-1];
@@ -545,7 +622,7 @@ function relBlock(d){
   return `<div class="rel"><h4>📊 Надёжность <span class="tiny" style="font-weight:400">— предварительно</span></h4>
     <div class="relrow">${chips}</div>
     <div class="relmeta">${cover} · согласованность на 3-й день: <b>${sw}</b> разброс (${g(spread)} мм).
-    Чем шире разрыв «в лучшем — в худшем случае» (p10–p90), тем ниже надёжность.
+    Нажмите на любой срок выше — разберём на реальных числах, почему именно такая оценка.
     <button class="lnk" onclick="showModels(${n})">какие это модели?</button></div>
     <details class="rel-how"><summary>Как считается надёжность</summary>
       <div class="body">
@@ -575,6 +652,7 @@ async function loadForecast(id){
   if(tg&&tg.BackButton){tg.BackButton.show();tg.BackButton.onClick(loadHome);}
   try{
     const d=await api('/api/forecast?location='+encodeURIComponent(id));
+    CACHE.fc=d;                       // для поп-апа «почему такая надёжность»
     const upd=new Date(d.computed_at);
     const leg=`<div class="dayleg">
       <span>🥾 день · 🏕 ночёвка — <b>вердикт: стоит ли идти</b></span>
@@ -606,8 +684,8 @@ async function loadForecast(id){
       <div class="blk"><h4>📋 Прогноз по дням <span class="tiny">— ${d.days.length} ${plural(d.days.length,'день','дня','дней')}, по важности сигналов</span></h4>
         <div class="days">${leg}${rows}
         <div class="tiny" style="padding:8px 2px 4px;line-height:1.4">* у последнего дня прогноза на следующие сутки ещё нет — оценка «с ночёвкой» предварительна.</div></div></div>
-      ${relBlock(d)}
-      <section id="secHistory" class="blk">${H_HIST}<div class="skel"></div></section>`;
+      <section id="secHistory" class="blk">${H_HIST}<div class="skel"></div></section>
+      ${relBlock(d)}`;
     hydrateHourly(id); hydrateHistory(id);
   }catch(e){view.innerHTML='<div class="state">Прогноз ещё не рассчитан.</div>'}
 }
