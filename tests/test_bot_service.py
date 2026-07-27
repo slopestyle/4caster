@@ -41,3 +41,33 @@ def test_start_reply_mentions_locations_and_has_keyboard():
 def test_locations_reply_has_keyboard():
     r = service.locations_reply()
     assert r.keyboard is not None
+
+
+# ── read-модель: прошедшие дни не показываем ────────────────────────────────
+
+def test_upcoming_drops_past_days():
+    from datetime import date
+
+    from fourcaster.platform.read_model import upcoming
+
+    days = [{"day": "2026-07-25", "p50": 1.0}, {"day": "2026-07-26", "p50": 2.0},
+            {"day": "2026-07-27", "p50": 3.0}]
+    left = upcoming(days, today=date(2026, 7, 26))
+    assert [d["day"] for d in left] == ["2026-07-26", "2026-07-27"]
+
+
+def test_upcoming_keeps_everything_when_card_is_fresh():
+    from datetime import date
+
+    from fourcaster.platform.read_model import upcoming
+
+    days = [{"day": "2026-07-26"}, {"day": "2026-07-27"}]
+    assert upcoming(days, today=date(2026, 7, 26)) == days
+
+
+def test_upcoming_on_fully_stale_card_is_empty():
+    from datetime import date
+
+    from fourcaster.platform.read_model import upcoming
+
+    assert upcoming([{"day": "2026-07-01"}], today=date(2026, 7, 26)) == []

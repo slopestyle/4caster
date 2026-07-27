@@ -84,6 +84,7 @@ HTML = r'''<!doctype html>
   .pill{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;background:var(--surface3);
     color:var(--ink2)}
   .pill.ok{color:var(--brand)}
+  .pill.stale{color:var(--a);background:color-mix(in srgb,var(--a) 16%,var(--surface3))}
 
   .dhead{display:flex;justify-content:space-between;align-items:baseline;margin:4px 2px 12px}
   .dhead .loc{font-size:20px;font-weight:750;letter-spacing:-.01em}
@@ -557,6 +558,15 @@ function relBlock(d){
       </div></details></div>`;
 }
 
+// возраст карточки: конвейер идёт 6×/сутки, но прогон может опоздать или упасть —
+// тогда честнее сказать, что данные несвежие, чем молча показывать время без даты
+function freshness(upd){
+  const hrs=(Date.now()-upd.getTime())/3600e3;
+  const hhmm=String(upd.getHours()).padStart(2,'0')+':'+String(upd.getMinutes()).padStart(2,'0');
+  const when=hrs<24 ? `${hhmm}` : `${dmt(upd)} ${hhmm}`;
+  if(hrs>=8) return `<span class="pill stale" title="Конвейер считает прогноз каждые 4 часа; последний расчёт задержался">⚠ данные от ${when} · ${Math.round(hrs)} ч назад</span>`;
+  return `<span class="tiny">обновлено ${when}</span>`;
+}
 async function loadForecast(id){
   closeModal();
   view.innerHTML='<div class="skel"></div><div class="skel"></div>';
@@ -586,7 +596,7 @@ async function loadForecast(id){
       <div class="dhead"><div class="loc">${d.location.name}</div><div class="tiny">${d.location.elevation_m} м</div></div>
       <div class="row" style="margin:0 2px 10px">
         <button class="pill ok" onclick="showModels(${d.n_models})">🛰 ${d.n_models} ${modelsWord(d.n_models)} ⓘ</button>
-        <span class="tiny">обновлено ${String(upd.getHours()).padStart(2,'0')}:${String(upd.getMinutes()).padStart(2,'0')}</span></div>
+        ${freshness(upd)}</div>
       <section id="secHourly" class="blk">${H_HOURLY}<div class="skel"></div></section>
       ${hikeHero(d.days)}
       <div class="blk"><h4>🌧 Осадки по дням <span class="tiny">— ${d.days.length} ${plural(d.days.length,'день','дня','дней')}</span></h4>

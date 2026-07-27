@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-
-from datetime import datetime
+from datetime import UTC, date, datetime
 
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
@@ -57,6 +55,18 @@ def upsert_card(
         conn.execute(stmt)
 
 
+def upcoming(days: list[dict], *, today: date | None = None) -> list[dict]:
+    """Отбрасывает прошедшие дни карточки (день < сегодня по UTC).
+
+    Карточка — снапшот прогона, а прогоны идут 6×/сутки и могут опаздывать или
+    падать. Пока конвейер не отработал после полуночи, в кэше лежит вчерашний
+    день — показывать его как «сегодня» нельзя ни в боте, ни в Mini App.
+    Дни хранятся ISO-строками (YYYY-MM-DD), поэтому сравнение лексикографическое.
+    """
+    ref = (today or datetime.now(UTC).date()).isoformat()
+    return [d for d in days if d.get("day", "") >= ref]
+
+
 def get_card(engine: Engine, location_id: str) -> str | None:
     """Готовый текст карточки из кэша (FR-TG-7: ответ бота из read-модели)."""
     stmt = select(ForecastCardCache.rendered_text).where(
@@ -77,11 +87,14 @@ def get_card_full(engine: Engine, location_id: str) -> dict | None:
         row = conn.execute(stmt).first()
     if row is None:
         return None
+    days = upcoming(row.consensus or [])
+    if not days:            # карточка протухла целиком — честнее «нет прогноза»
+        return None
     return {
         "computed_at": row.computed_at.isoformat(),
-        "days_count": row.days,
-        "days": row.consensus,
-        "n_models": (row.consensus[0]["n_models"] if row.consensus else 0),
+        "days_count": len(days),
+        "days": days,
+        "n_models": days[0]["n_models"],
     }
 
 
@@ -206,7 +219,7 @@ def list_cards(engine: Engine) -> dict[str, dict]:
         rows = conn.execute(stmt).all()
     out: dict[str, dict] = {}
     for r in rows:
-        cons = r.consensus or []
+        cons = upcoming(r.consensus or [])
         out[r.location_id] = {
             "computed_at": r.computed_at.isoformat(),
             "today": (cons[0] if cons else None),

@@ -7,22 +7,49 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, datetime
 
 from aiogram.types import InlineKeyboardMarkup
 from sqlalchemy.engine import Engine
 
+from fourcaster.modules.consensus.calculator import DayConsensus
 from fourcaster.modules.locations import CATALOG, get_location
+from fourcaster.modules.telegram_ui.renderers import render_forecast_card
 from fourcaster.modules.telegram_ui.keyboards import (
     forecast_keyboard,
     locations_keyboard,
     start_keyboard,
 )
 from fourcaster.platform.read_model import (
-    get_card,
+    get_card_full,
     list_subscriptions,
     subscribe,
     unsubscribe,
 )
+
+
+def render_cached_card(engine: Engine, location) -> str | None:
+    """Текст карточки из read-модели, но без прошедших дней.
+
+    В кэше лежит `rendered_text` того прогона, который отработал последним;
+    если конвейер опоздал с ночным циклом, там всё ещё вчерашний день. Поэтому
+    берём структурированную карточку (она уже отфильтрована `upcoming`) и
+    форматируем заново — доменных вычислений здесь по-прежнему нет (MB-5).
+    """
+    data = get_card_full(engine, location.id)
+    if data is None:
+        return None
+    days = [
+        DayConsensus(
+            day=date.fromisoformat(d["day"]),
+            p10=d["p10"], p50=d["p50"], p90=d["p90"],
+            pop=d["pop"], n_models=d["n_models"],
+        )
+        for d in data["days"]
+    ]
+    return render_forecast_card(
+        location, days, computed_at=datetime.fromisoformat(data["computed_at"])
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,7 +106,7 @@ def forecast_reply(
     except KeyError:
         return BotReply("Такой локации нет. Выберите из списка:", locations_keyboard())
 
-    card = get_card(engine, location.id)
+    card = render_cached_card(engine, location)
     if card is None:
         return BotReply(
             f"По «{location.name}» пока нет рассчитанного прогноза — "
