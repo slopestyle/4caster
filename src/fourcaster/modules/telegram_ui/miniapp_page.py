@@ -392,18 +392,18 @@ function showReliability(iso){
       <span class="tiny">${LVL_DESC[w.lvl]}</span></div>
     <div class="mtxt">${w.why} ${w.cover}</div>
     <div class="relnums">
-      <div><span>в лучшем случае</span><b>${g(d.p10)} мм</b></div>
-      <div><span>основной сценарий</span><b>${g(d.p50)} мм</b></div>
-      <div><span>в худшем случае</span><b>${g(d.p90)} мм</b></div>
+      <div><span>минимум (сухой сценарий)</span><b>${g(d.p10)} мм</b></div>
+      <div><span>скорее всего</span><b>${g(d.p50)} мм</b></div>
+      <div><span>максимум (мокрый сценарий)</span><b>${g(d.p90)} мм</b></div>
       <div><span>вероятность осадков</span><b>${Math.round(d.pop*100)}%</b></div>
       <div><span>моделей в расчёте</span><b>${d.n_models}/5</b></div>
-      <div><span>ширина разброса</span><b>${g(w.abs)} мм</b></div>
+      <div><span>разница «от» и «до»</span><b>${g(w.abs)} мм</b></div>
     </div>
     <div class="note">Считаем так: сначала прогоняем <b>лучший и худший сценарии</b> через тот же
     вердикт, что и на карточке дня. Ответ не меняется — надёжность высокая, даже если в
     процентах разброс большой (0,4 против 2 мм — «в пять раз», а идти всё равно можно).
-    Меняется на один шаг — не хуже «осторожно». Меняется сильнее — смотрим величину
-    разброса относительно медианы: сейчас ${g(w.rel*100)}% (до 80% — осторожно, до 140% —
+    Меняется на один шаг — не хуже «осторожно». Меняется сильнее — смотрим, насколько
+    разрыв «от и до» велик рядом с самим числом: сейчас ${g(w.rel*100)}% (до 80% — осторожно, до 140% —
     низкая, выше — не опираться). Меньше 4 моделей в расчёте — минус ещё шаг.</div>
     <div class="note">Это оценка <b>по согласию моделей</b>, а не по их прошлой точности:
     калиброванный скор (сверка прогноза с фактом на истории) — следующая фаза.</div>`);
@@ -512,7 +512,7 @@ async function showModels(n){
     sheet.innerHTML=`${SHEET_HD}
       <div class="mtxt" style="margin-bottom:2px">Прогноз — не одна модель, а ${ms.length} независимых:
       их считают разные метеоцентры по разной физике. Мы берём все ${ms.length} и сводим во
-      взвешенные перцентили (p10 / p50 / p90) — каждая модель учитывается ровно один раз.</div>
+      один ответ: «скорее всего столько» и рамки «от и до» — каждая модель учитывается ровно один раз.</div>
       ${rows}${miss}
       <div class="note">Вес — насколько модели верим сейчас. Веса стартовые, по репутации моделей;
       пересчёт по фактической точности на истории (Accuracy Engine) — следующая фаза.</div>`;
@@ -552,7 +552,7 @@ function locCard(l){
     <div class="row"><div><div class="loc">${l.name}</div>
       <div class="tiny">${l.elevation_m} м</div></div>
       <span class="pill">нет расчёта</span></div></button>`;
-  const today=`<span class="band-num">сегодня <b>${g(t.p50)}</b> <u>(${g(t.p10)}–${g(t.p90)})</u> мм · ${Math.round(t.pop*100)}%</span>`;
+  const today=`<span class="band-num">сегодня <b>${g(t.p50)}</b> мм <u>(от ${g(t.p10)} до ${g(t.p90)})</u> · ${Math.round(t.pop*100)}%</span>`;
   return `<button class="card" onclick="loadForecast('${l.id}')">
     <div class="row"><div><div class="loc">${HIL_IC[t.hil_level]} ${l.name}</div>
       <div class="tiny">${l.elevation_m} м</div></div>
@@ -640,7 +640,7 @@ function weeklyChart(days){
   days.forEach((d,i)=>{
     const x=pad+i*bw+bw/2;
     const bh=Math.max(1.5,base-y(d.p50));
-    const tip=`${wd(d.day)} ${dm(d.day)} · ${g(d.p50)} мм (${g(d.p10)}–${g(d.p90)}) · ${d.hil_label} · вероятность ${Math.round(d.pop*100)}%`;
+    const tip=`${wd(d.day)} ${dm(d.day)} · скорее всего ${g(d.p50)} мм, от ${g(d.p10)} до ${g(d.p90)} · ${d.hil_label} · вероятность ${Math.round(d.pop*100)}%`;
     bars+=`<path d="${barPath(x-barW/2,base-bh,barW,bh,3)}" fill="${PC[d.hil_level]}"><title>${tip}</title></path>`;
     wsk+=`<line x1="${x}" y1="${y(d.p10)}" x2="${x}" y2="${y(d.p90)}" stroke="var(--ink3)" stroke-width="1.2"></line>
       <line x1="${x-3}" y1="${y(d.p90)}" x2="${x+3}" y2="${y(d.p90)}" stroke="var(--ink3)" stroke-width="1.2"></line>`;
@@ -658,9 +658,9 @@ function weeklyChart(days){
     ${grid}
     <line x1="${pad}" y1="${base}" x2="${W-pad}" y2="${base}" stroke="var(--hair2)"></line>
     ${bars}${wsk}${lbl}${xl}</svg>
-    <div class="cl"><span><i class="sw" style="background:var(--ink3)"></i>усы — разброс моделей: в лучшем → в худшем случае</span></div></div>
+    <div class="cl"><span><i class="sw" style="background:var(--ink3)"></i>усы — от минимума до максимума по моделям</span></div></div>
     <div class="scale"><span>сухо</span><div class="grad"></div><span>ливень</span></div>
-    <div class="note">Высота столбца — медиана суточных осадков (p50), цвет — насколько это мешает походу
+    <div class="note">Высота столбца — сколько дождя скорее всего выпадет за сутки, цвет — насколько это мешает походу
     (${HIL_W.join(' · ')}). Шкала по высоте — корневая: иначе один ливень «сплющивает» все остальные дни
     до нуля. Подписаны три самых мокрых дня, остальные значения — в списке ниже.</div>`;
 }
@@ -674,7 +674,7 @@ function relBlock(d){
     const dd=d.days[i], lvl=confLevel(dd,dd.n_models);
     const lab=`${i+1} ${plural(i+1,'день','дня','дней')}`;
     return `<button class="relchip" onclick="showReliability('${dd.day}')"
-        title="${wd(dd.day)} ${dm(dd.day)}: ${g(dd.p50)} мм (${g(dd.p10)}–${g(dd.p90)}), ${dd.n_models}/5 моделей — нажмите, чтобы разобрать">
+        title="${wd(dd.day)} ${dm(dd.day)}: скорее всего ${g(dd.p50)} мм, от ${g(dd.p10)} до ${g(dd.p90)}, ${dd.n_models}/5 моделей — нажмите, чтобы разобрать">
       <div class="h">${lab.toUpperCase()}</div>
       <div class="dot ${CB[lvl]}"></div><div class="w ${GC[lvl]}">${CW[lvl]}</div>
       <div class="relchip-n">${dd.n_models}/5 моделей</div></button>`;
@@ -689,14 +689,14 @@ function relBlock(d){
   const sw=spread<3?'узкий':spread<12?'умеренный':'широкий';
   return `<div class="rel"><h4>📊 Надёжность <span class="tiny" style="font-weight:400">— предварительно</span></h4>
     <div class="relrow">${chips}</div>
-    <div class="relmeta">${cover} · согласованность на 3-й день: <b>${sw}</b> разброс (${g(spread)} мм).
+    <div class="relmeta">${cover} · на 3-й день «от» и «до» расходятся на <b>${g(spread)} мм</b> — это ${sw} разброс.
     Нажмите на любой срок выше — разберём на реальных числах, почему именно такая оценка.
     <button class="lnk" onclick="showModels(${n})">какие это модели?</button></div>
     <details class="rel-how"><summary>Как считается надёжность</summary>
       <div class="body">
         Один и тот же день считают до <b>5 независимых метеомоделей</b>. Надёжность — это
-        насколько они <b>согласны между собой</b>: чем меньше разрыв «в лучшем — в худшем
-        случае» (p10–p90) относительно медианы, тем выше надёжность. На дальних днях
+        насколько они <b>согласны между собой</b>: чем ближе «минимум» и «максимум»
+        друг к другу, тем выше надёжность. На дальних днях
         моделей в расчёте меньше — оценка автоматически снижается.
         ${CW.map((w,i)=>`<div class="rel-lv"><i class="${CB[i]}"></i><span><b class="${GC[i]}">${w}</b> — ${LVL_DESC[i]}</span></div>`).join('')}
         <div style="margin-top:7px;color:var(--ink3)">Это оценка <b>по разбросу моделей</b>
@@ -724,7 +724,7 @@ async function loadForecast(id){
     const upd=new Date(d.computed_at);
     const leg=`<div class="dayleg">
       <span>🥾 день · 🏕 ночёвка — <b>вердикт: стоит ли идти</b></span>
-      <span>в скобках — от <b>меньшего</b> дождя к <b>большему</b> (p10–p90)</span></div>`;
+      <span>дождь за сутки: сколько <b>скорее всего</b>, а рядом — <b>от</b> минимума <b>до</b> максимума</span></div>`;
     const rows=d.days.map((x,i)=>{
       const hd=hikeDay(x), hn=hikeNight(x, d.days[i+1]);
       return `<div class="day">
@@ -736,7 +736,7 @@ async function loadForecast(id){
           <span class="vd">🏕 <b class="${GC[hn.lvl]}">${HW[hn.lvl]}</b><em>ночёвка${hn.partial?'*':''}</em></span>
         </div>
         <div class="daypop">вероятность дождя <b>${Math.round(x.pop*100)}%</b></div>
-        <div class="daymeta"><b>${g(x.p50)}</b> (${g(x.p10)}–${g(x.p90)}) мм · ${x.hil_label}</div>
+        <div class="daymeta"><b>${g(x.p50)}</b> мм · от ${g(x.p10)} до ${g(x.p90)} · ${x.hil_label}</div>
         ${band(x)}
       </div></div>`;
     }).join('');
@@ -802,7 +802,7 @@ function hourlyChart(h){
       ${dry}${grid}<line x1="${padL}" y1="${base}" x2="${W-padR}" y2="${base}" stroke="var(--hair2)"></line>
       ${band}${line}${popl}${nowMark}${xl}${dl}
       <text x="${W-padR}" y="10" font-size="8" fill="var(--ink3)" text-anchor="end">осадки, мм/ч</text></svg>
-      <div class="cl"><span><i class="sw" style="background:var(--precip)"></i>p50 + разброс</span>
+      <div class="cl"><span><i class="sw" style="background:var(--precip)"></i>скорее всего + от и до</span>
       <span><i class="sw" style="background:var(--accent)"></i>вероятность</span>
       <span><i class="sw" style="background:color-mix(in srgb,var(--g) 40%,transparent)"></i>сухо</span></div></div>`;
     // окно и сухое окно — в часах от «сейчас»
@@ -813,7 +813,7 @@ function hourlyChart(h){
       : `Осадки уже идут.`;
     const range=`<div class="tiny" style="margin:-2px 2px 8px">от <b>${WD[t0.getDay()]} ${dmt(t0)} ${hhmm(t0)}</b> до <b>${WD[t1.getDay()]} ${dmt(t1)} ${hhmm(t1)}</b> · ${n} ч · местное время</div>`;
     return `${range}${svg}
-      <div class="note" style="margin-top:10px">${summary} Пунктир — вероятность осадков, полоса — разброс от лучшего к худшему случаю по моделям (p10–p90).</div>`;
+      <div class="note" style="margin-top:10px">${summary} Пунктир — вероятность осадков, полоса — от минимума до максимума по моделям.</div>`;
 }
 async function hydrateHourly(id){
   const box=document.getElementById('secHourly'); if(!box) return;
@@ -855,7 +855,7 @@ function historyHeatmap(h){
       return `<div class="hmrow"><span class="yl"><b>${wd(r.date)}</b> ${dm(r.date)}</span><div class="cells" style="${gtc}">${cells}</div></div>`;
     }).join('');
     return `<div class="story">Строки — прогнозируемая дата, столбцы — момент выпуска прогноза (${n}, последний выделен).
-      Цвет — осадки p50 <b>относительно этого же дня</b>: у каждой строки своя шкала, чтобы было видно,
+      Цвет — ожидаемый дождь <b>относительно этого же дня</b>: у каждой строки своя шкала, чтобы было видно,
       как менялось мнение моделей именно про эту дату.</div>
       <div class="hm">${head}${body}</div>
       <div class="scale"><span>сухо</span><div class="grad"></div><span>ливень</span></div>
@@ -888,7 +888,7 @@ async function loadCompare(){
       body+=`<tr><td class="d">${wd(dref.day)} ${dm(dref.day)}</td>${cells}</tr>`;
     }
     view.innerHTML=`<div class="cmp"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>
-      <div class="note" style="margin-top:10px">Значение — осадки p50 за сутки. Выберите район с меньшим дождём как альтернативу.</div>`;
+      <div class="note" style="margin-top:10px">Значение — сколько дождя скорее всего выпадет за сутки. Выберите район с меньшим дождём как альтернативу.</div>`;
   }catch(e){view.innerHTML='<div class="state">Не удалось сравнить.</div>'}
 }
 
