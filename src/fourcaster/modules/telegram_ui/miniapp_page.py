@@ -244,6 +244,14 @@ HTML = r'''<!doctype html>
     color:var(--ink3);white-space:nowrap;font-variant-numeric:tabular-nums;
     justify-self:center;padding-bottom:3px}
   .hm-hd span.last{color:var(--brand);font-weight:700}
+  /* фильтры heatmap: компактные чипы, чтобы не отъедать высоту у самой матрицы */
+  .filt{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 4px}
+  .fgrp{display:flex;align-items:center;gap:3px;background:var(--surface2);
+    border:1px solid var(--hair);border-radius:10px;padding:3px 4px 3px 8px}
+  .fgrp em{font-style:normal;font-size:10px;font-weight:650;color:var(--ink3);margin-right:2px}
+  .fgrp button{border:0;background:none;color:var(--ink2);font:inherit;font-size:11px;
+    font-weight:650;padding:4px 8px;border-radius:7px;cursor:pointer}
+  .fgrp button.on{background:var(--brand);color:#fff}
   .scale{display:flex;align-items:center;gap:7px;font-size:9.5px;color:var(--ink2);margin-top:10px}
   .scale .grad{flex:1;height:7px;border-radius:4px;
     background:linear-gradient(90deg,var(--p0),var(--p2),var(--p3),var(--p4),var(--p5))}
@@ -869,9 +877,48 @@ function heatColor(v,mx){
   const f=Math.round((seg-i)*100);
   return `color-mix(in srgb,${stops[i+1]} ${f}%,${stops[i]})`;
 }
+// Фильтры матрицы. Дефолт неслучайный: read-модель отдаёт ВСЕ прогнозируемые
+// даты за всё время (включая прошедшие и строки без данных) × до 14 выпусков —
+// целиком это не влезает в экран телефона и не читается. По умолчанию показываем
+// то, на что ещё можно опереться: ближайшую неделю и последние сутки выпусков.
+// Полная картина остаётся по кнопке «все».
+const HM_DAYS=[{k:'3',t:'3 дня',n:3},{k:'7',t:'7 дней',n:7},{k:'all',t:'все',n:null}];
+const HM_ISS=[{k:'6',t:'сутки',n:6},{k:'12',t:'2 суток',n:12},{k:'all',t:'все',n:null}];
+const HM_DEF={days:'7',iss:'6'};
+const hmOpt=(list,k)=>list.find(o=>o.k===k)||list[list.length-1];
+function hmState(){ if(!CACHE.hm) CACHE.hm=Object.assign({},HM_DEF); return CACHE.hm; }
+function setHm(key,val){ hmState()[key]=val; renderHistory(); }
+function hmApply(h,f){
+  const iN=hmOpt(HM_ISS,f.iss).n;
+  const issues=iN?h.issues.slice(-iN):h.issues.slice();
+  const off=h.issues.length-issues.length;
+  const dN=hmOpt(HM_DAYS,f.days).n;
+  const today=new Date(); today.setHours(0,0,0,0);
+  let rows=h.rows.map(r=>({date:r.date,vals:r.vals.slice(off)}));
+  if(dN!=null){
+    const lim=today.getTime()+(dN-1)*864e5;
+    rows=rows.filter(r=>{const t=new Date(r.date+'T00:00:00').getTime(); return t>=today.getTime()&&t<=lim;});
+  }
+  // после обрезки выпусков строка может остаться совсем без данных — такую не рисуем
+  return {issues,rows:rows.filter(r=>r.vals.some(v=>v!=null))};
+}
+function hmBar(h,f){
+  const today=new Date(); today.setHours(0,0,0,0);
+  const fut=h.rows.filter(r=>new Date(r.date+'T00:00:00').getTime()>=today.getTime()).length;
+  // варианты, которые ничего не отрежут, не показываем — они дубль кнопки «все»
+  const keep=(list,total,key)=>list.filter(o=>o.n==null||o.n<total||o.k===f[key]);
+  const grp=(label,list,key)=>list.length<2?'':`<div class="fgrp"><em>${label}</em>${
+    list.map(o=>`<button class="${f[key]===o.k?'on':''}" onclick="setHm('${key}','${o.k}')">${o.t}</button>`).join('')}</div>`;
+  return `<div class="filt">${grp('даты',keep(HM_DAYS,fut,'days'),'days')}${
+    grp('выпуски',keep(HM_ISS,h.issues.length,'iss'),'iss')}</div>`;
+}
 function historyHeatmap(h){
-    const n=h.issues.length;
-    if(!n) return `<div class="note">История пуста — накопится за несколько циклов (каждые 4 ч).</div>`;
+    if(!h.issues.length) return `<div class="note">История пуста — накопится за несколько циклов (каждые 4 ч).</div>`;
+    const f=hmState(), bar=hmBar(h,f);
+    const v=hmApply(h,f);
+    const n=v.issues.length;
+    if(!v.rows.length) return `${bar}<div class="note">За выбранный период данных нет — переключите фильтр на «все».</div>`;
+    h={issues:v.issues,rows:v.rows};
     const gtc=`grid-template-columns:repeat(${n},1fr)`;
     // Нормировка ПО СТРОКЕ (дню), а не по глобальному максимуму: цвет показывает
     // эволюцию прогноза именно для этой даты, и один ливневый день не «засвечивает»
@@ -894,16 +941,22 @@ function historyHeatmap(h){
     return `<div class="story">Строки — прогнозируемая дата, столбцы — момент выпуска прогноза (${n}, последний выделен).
       Цвет — ожидаемый дождь <b>относительно этого же дня</b>: у каждой строки своя шкала, чтобы было видно,
       как менялось мнение моделей именно про эту дату.</div>
+      ${bar}
       <div class="hm">${head}${body}</div>
       <div class="scale"><span>сухо</span><div class="grad"></div><span>ливень</span></div>
       <div class="note">Стабильные столбцы справа — прогноз «устаканился». Скачки — модели меняли мнение.
       Накапливается автоматически каждые 4 часа.</div>`;
 }
+function renderHistory(){
+  const box=document.getElementById('secHistory');
+  if(box&&CACHE.hist) box.innerHTML=H_HIST+historyHeatmap(CACHE.hist);
+}
 async function hydrateHistory(id){
   const box=document.getElementById('secHistory'); if(!box) return;
+  CACHE.hist=null;                  // чтобы не мигнуть историей прошлой локации
   try{
-    const h=await api('/api/history?location='+encodeURIComponent(id));
-    box.innerHTML=H_HIST+historyHeatmap(h);
+    CACHE.hist=await api('/api/history?location='+encodeURIComponent(id));
+    renderHistory();
   }catch(e){ box.innerHTML=H_HIST+`<div class="note">Не удалось загрузить историю.</div>`; }
 }
 
