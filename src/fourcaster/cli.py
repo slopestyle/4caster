@@ -203,7 +203,10 @@ def main(argv: list[str] | None = None) -> int:
     token = None
     if args.save:
         from fourcaster.platform.db import make_engine
-        engine = make_engine()
+        # nullpool: между локациями соединение простаивает десятки секунд, пока
+        # идут запросы к Open-Meteo, а transaction pooler такие срезает — потом
+        # COMMIT падает с «SSL error: unexpected eof». Берём соединение заново.
+        engine = make_engine(nullpool=True)
         try:
             from fourcaster.platform.config import telegram_token
             token = telegram_token()
@@ -237,21 +240,26 @@ def main(argv: list[str] | None = None) -> int:
             from fourcaster.platform.read_model import (
                 get_previous_snapshot, insert_history, subscribers_for, upsert_card,
             )
-            previous = get_previous_snapshot(engine, location.id)
-            upsert_card(engine, location_id=location.id, computed_at=computed_at,
-                        days=consensus, rendered_text=card,
-                        reliability=run.reliability, profiles=run.profiles)
-            insert_history(engine, location_id=location.id, issued_at=computed_at,
-                           days=consensus)
-            print(f"→ сохранено в БД: {location.id}", file=sys.stderr)
+            # Сбой записи по одной локации не должен ронять остальной каталог:
+            # прогон идёт 6×/сутки, дешевле потерять точку до следующего цикла.
+            try:
+                previous = get_previous_snapshot(engine, location.id)
+                upsert_card(engine, location_id=location.id, computed_at=computed_at,
+                            days=consensus, rendered_text=card,
+                            reliability=run.reliability, profiles=run.profiles)
+                insert_history(engine, location_id=location.id, issued_at=computed_at,
+                               days=consensus)
+                print(f"→ сохранено в БД: {location.id}", file=sys.stderr)
 
-            changes = detect_changes(previous, consensus)
-            if changes and token:
-                chat_ids = subscribers_for(engine, location.id)
-                n = send_alerts(token=token, chat_ids=chat_ids,
-                                location_name=location.name, changes=changes)
-                print(f"→ алертов отправлено ({location.id}): {n} "
-                      f"по {len(changes)} изменениям", file=sys.stderr)
+                changes = detect_changes(previous, consensus)
+                if changes and token:
+                    chat_ids = subscribers_for(engine, location.id)
+                    n = send_alerts(token=token, chat_ids=chat_ids,
+                                    location_name=location.name, changes=changes)
+                    print(f"→ алертов отправлено ({location.id}): {n} "
+                          f"по {len(changes)} изменениям", file=sys.stderr)
+            except Exception as exc:  # noqa: BLE001 — CLI-граница
+                print(f"[{loc_id}] БД: {exc}", file=sys.stderr)
     return 0
 
 

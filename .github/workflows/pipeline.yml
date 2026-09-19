@@ -34,10 +34,15 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
-          SAVE=""
-          if [ -n "$DATABASE_URL" ]; then SAVE="--save"; fi
+          # Молчаливый пропуск записи прячет аварию: крон рапортует success,
+          # а read-модель месяцами не обновляется (так и случилось 17.08–19.09).
+          # Нет секрета — падаем громко.
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::Секрет DATABASE_URL не задан — конвейеру некуда писать."
+            exit 1
+          fi
           # Пусто — CLI берёт весь опубликованный каталог (published()).
-          python -m fourcaster.cli ${{ github.event.inputs.locations }} $SAVE \
+          python -m fourcaster.cli ${{ github.event.inputs.locations }} --save \
             | tee cards.txt
       - name: Upload cards artifact
         uses: actions/upload-artifact@v4
