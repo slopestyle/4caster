@@ -29,6 +29,16 @@ def test_build_card_offline(location_id: str):
     assert card.count(".07") + card.count(".08") >= 7
 
 
+def test_card_reports_reliability_by_horizon_not_by_single_day():
+    """§10.6.3: надёжность даётся на период целиком — сутки / 3 / 7 дней."""
+    card = build_card(_FIXTURES[0], days=7, offline=True)
+    line = next(ln for ln in card.splitlines() if "Надёжность" in ln)
+    assert "на период целиком" in line
+    for horizon in ("сутки —", "3 дня —", "7 дней —"):
+        assert horizon in line
+    assert "на ближайший день" not in card
+
+
 def test_catalog_is_inside_region_and_has_known_clusters():
     lat_min, lat_max, lon_min, lon_max = REGION_BBOX
     for loc in CATALOG.values():

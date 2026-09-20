@@ -9,6 +9,10 @@
 Reliability Score НЕ показывается числом: калибровки пока нет, а INV-6
 запрещает выдавать некалиброванный скор как число. Показывается качественная
 шкала (§10.6.4) — слово и из чего оно сложилось.
+
+Надёжность даётся **на горизонт, а не на отдельные сутки** (§10.6.3): вопрос
+пользователя — «на сколько дней вперёд этому прогнозу можно верить», и ответ
+на него один на весь период, а не свой у каждого четверга.
 """
 
 from __future__ import annotations
@@ -18,7 +22,7 @@ from datetime import date, datetime
 from fourcaster.modules.consensus.calculator import DayConsensus
 from fourcaster.modules.downscaling import DayProfile
 from fourcaster.modules.hazard.rain import classify_hil
-from fourcaster.modules.reliability import Reliability
+from fourcaster.modules.reliability import HorizonReliability
 from fourcaster.shared_kernel.geo import Location
 from fourcaster.shared_kernel.variables import PrecipPhase
 
@@ -45,7 +49,7 @@ def render_forecast_card(
     location: Location,
     days: list[DayConsensus],
     *,
-    reliability: list[Reliability] | None = None,
+    horizons: list[HorizonReliability] | None = None,
     profiles: list[DayProfile] | None = None,
     n_models_total: int = 5,
     computed_at: datetime | None = None,
@@ -76,7 +80,7 @@ def render_forecast_card(
         lines.append(f"{_fmt_day(day.day)}  {label}{amount}  {bar}  {pct}{tail}")
 
     lines.append("")
-    lines.append(_reliability_line(reliability, n_ok, n_models_total))
+    lines.extend(_reliability_lines(horizons, days, n_ok, n_models_total))
     # Что именно упрощено, стоит называть точно: температура и фаза осадков уже
     # корректируются (§10.3), а вот усиление осадков рельефом обучается по факту
     # в Фазе 3, и HIL пока эвристика по суточной сумме.
@@ -84,21 +88,52 @@ def render_forecast_card(
     return "\n".join(lines)
 
 
-def _reliability_line(
-    reliability: list[Reliability] | None, n_ok: int, n_models_total: int
-) -> str:
-    """Строка надёжности на ближайший день — словом, а не числом (INV-6)."""
-    if not reliability:
-        return (f"📊 Надёжность: не рассчитана — "
-                f"согласие {n_ok}/{n_models_total} моделей.")
-    first = reliability[0]
-    parts = [f"согласие моделей {round(first.components.agreement * 100)}%"]
-    if first.components.ensemble_is_proxy:
-        parts.append("ансамбли недоступны")
+def _days_word(n: int) -> str:
+    """«1 сутки» звучит канцелярски, поэтому однодневный горизонт — «сутки»."""
+    if n == 1:
+        return "сутки"
+    a, b = n % 10, n % 100
+    if 2 <= a <= 4 and not (10 <= b < 20):
+        return f"{n} дня"
+    return f"{n} дней"
+
+
+def _reliability_lines(
+    horizons: list[HorizonReliability] | None,
+    days: list[DayConsensus],
+    n_ok: int,
+    n_models_total: int,
+) -> list[str]:
+    """Надёжность по горизонтам — словом, а не числом (INV-6, §10.6.3).
+
+    Оценка даётся на период целиком: «на ближайшие сутки — надёжно, на неделю —
+    низкая». Отдельные сутки внутри периода своей надёжности наружу не имеют:
+    прогноз на четверг из прогона, где вся неделя шатается, надёжным не бывает.
+    """
+    if not horizons:
+        return [f"📊 Надёжность: не рассчитана — "
+                f"согласие {n_ok}/{n_models_total} моделей."]
+
+    words = " · ".join(f"{_days_word(h.days)} — {h.label}" for h in horizons)
+    lines = [f"📊 Надёжность прогноза на период целиком: {words}."]
+
+    # Подробности — по горизонту в 3 суток (типичный выход с ночёвкой); если
+    # прогноз короче, берём самый длинный из имеющихся.
+    detail = next((h for h in horizons if h.days >= 3), horizons[-1])
+    parts = [f"согласие моделей {round(detail.components.agreement * 100)}%"]
+    if detail.components.ensemble_is_proxy:
+        parts.append("ансамбли не на все дни")
     else:
-        parts.append(f"разброс ансамблей {round(first.components.ensemble * 100)}%")
-    if first.components.stability is not None:
-        parts.append(f"устойчивость {round(first.components.stability * 100)}%")
+        parts.append(f"разброс ансамблей {round(detail.components.ensemble * 100)}%")
+    if detail.components.stability is not None:
+        parts.append(f"устойчивость {round(detail.components.stability * 100)}%")
     else:
         parts.append("истории для устойчивости пока мало")
-    return f"📊 Надёжность на ближайший день: {first.label} — " + ", ".join(parts) + "."
+    # H — насколько вообще оправдываются прогнозы на таком сроке: согласие
+    # моделей на дальних днях само по себе ещё не означает попадание в факт.
+    parts.append(f"оправдываемость срока {round(detail.components.history * 100)}%")
+
+    total = sum(d.p50 for d in days[:detail.days])
+    lines.append(f"   за {_days_word(detail.days)} суммарно ≈{total:g} мм · "
+                 + ", ".join(parts) + ".")
+    return lines

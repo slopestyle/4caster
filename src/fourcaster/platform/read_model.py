@@ -11,7 +11,12 @@ from sqlalchemy.engine import Engine
 from fourcaster.modules.consensus.calculator import DayConsensus
 from fourcaster.modules.downscaling import DayProfile
 from fourcaster.modules.hazard.rain import classify_hil
-from fourcaster.modules.reliability import Reliability
+from fourcaster.modules.reliability import (
+    HorizonReliability,
+    Reliability,
+    ReliabilityComponents,
+    aggregate_by_horizon,
+)
 from fourcaster.platform.models import (
     ForecastCardCache,
     ForecastHistory,
@@ -54,6 +59,8 @@ def _consensus_to_json(
                 "ensemble": rel.components.ensemble,
                 "ensemble_is_proxy": rel.components.ensemble_is_proxy,
                 "stability": rel.components.stability,
+                "history": rel.components.history,
+                "history_is_prior": rel.components.history_is_prior,
                 "n_members": rel.components.n_members,
                 "n_history_runs": rel.components.n_history_runs,
             }
@@ -67,6 +74,33 @@ def _consensus_to_json(
     return out
 
 
+def _horizons_to_json(horizons: list[HorizonReliability] | None) -> list[dict]:
+    """Проекция надёжности по горизонтам (§10.6.3) — то, что видит пользователь.
+
+    Числа скора наружу не идут (INV-6): `score` остаётся для отладки и будущей
+    калибровки, показывается `label`/`level`.
+    """
+    return [{
+        "days": h.days,
+        "start": h.start.isoformat(),
+        "end": h.end.isoformat(),
+        "level": h.level,
+        "label": h.label,
+        "score": h.score,
+        "is_calibrated": h.is_calibrated,
+        "worst_day": h.worst_day.isoformat() if h.worst_day else None,
+        "agreement": h.components.agreement,
+        "ensemble": h.components.ensemble,
+        "ensemble_is_proxy": h.components.ensemble_is_proxy,
+        "stability": h.components.stability,
+        "history": h.components.history,
+        "history_is_prior": h.components.history_is_prior,
+        "n_models": h.components.n_models,
+        "n_members": h.components.n_members,
+        "n_history_runs": h.components.n_history_runs,
+    } for h in horizons or ()]
+
+
 def upsert_card(
     engine: Engine,
     *,
@@ -75,6 +109,7 @@ def upsert_card(
     days: list[DayConsensus],
     rendered_text: str,
     reliability: list[Reliability] | None = None,
+    horizons: list[HorizonReliability] | None = None,
     profiles: list[DayProfile] | None = None,
 ) -> None:
     """Идемпотентная запись карточки (INSERT ... ON CONFLICT DO UPDATE)."""
@@ -84,11 +119,13 @@ def upsert_card(
         "days": len(days),
         "rendered_text": rendered_text,
         "consensus": _consensus_to_json(days, reliability, profiles),
+        "horizons": _horizons_to_json(horizons),
     }
     stmt = insert(ForecastCardCache).values(**payload)
     stmt = stmt.on_conflict_do_update(
         index_elements=[ForecastCardCache.location_id],
-        set_={k: stmt.excluded[k] for k in ("computed_at", "days", "rendered_text", "consensus")},
+        set_={k: stmt.excluded[k]
+              for k in ("computed_at", "days", "rendered_text", "consensus", "horizons")},
     )
     with engine.begin() as conn:
         conn.execute(stmt)
@@ -115,12 +152,52 @@ def get_card(engine: Engine, location_id: str) -> str | None:
         return conn.execute(stmt).scalar_one_or_none()
 
 
+def reliability_from_json(day: dict) -> Reliability:
+    """Посчитанная в конвейере надёжность суток обратно из карточки (MB-5)."""
+    r = day["reliability"]
+    return Reliability(
+        day=date.fromisoformat(day["day"]),
+        score=r["score"],
+        level=r["level"],
+        components=ReliabilityComponents(
+            agreement=r["agreement"],
+            ensemble=r["ensemble"],
+            stability=r.get("stability"),
+            ensemble_is_proxy=r.get("ensemble_is_proxy", True),
+            n_models=day["n_models"],
+            n_members=r.get("n_members", day["n_models"]),
+            n_history_runs=r.get("n_history_runs", 0),
+            history=r.get("history", 1.0),
+            history_is_prior=r.get("history_is_prior", True),
+        ),
+        is_calibrated=r.get("is_calibrated", False),
+    )
+
+
+def horizons_for(stored: list[dict] | None, days: list[dict]) -> list[dict]:
+    """Горизонты надёжности для уже отфильтрованных дней карточки (§10.6.3).
+
+    Обычный путь — отдать то, что посчитал конвейер. Но горизонт отсчитывается
+    от первых суток карточки, а `upcoming` мог отрезать прошедший день: тогда
+    «ближайшие 3 дня» из записи означали бы вчера-сегодня-завтра. В этом случае
+    свёртка повторяется по оставшимся суткам — не пересчёт прогноза, а
+    пересборка проекции из уже посчитанных посуточных оценок.
+    """
+    if not days:
+        return []
+    if stored and stored[0].get("start") == days[0].get("day"):
+        return stored
+    daily = [reliability_from_json(d) for d in days if d.get("reliability")]
+    return _horizons_to_json(aggregate_by_horizon(daily))
+
+
 def get_card_full(engine: Engine, location_id: str) -> dict | None:
     """Структурированная карточка для Mini App (JSON API)."""
     stmt = select(
         ForecastCardCache.computed_at,
         ForecastCardCache.days,
         ForecastCardCache.consensus,
+        ForecastCardCache.horizons,
     ).where(ForecastCardCache.location_id == location_id)
     with engine.connect() as conn:
         row = conn.execute(stmt).first()
@@ -134,6 +211,7 @@ def get_card_full(engine: Engine, location_id: str) -> dict | None:
         "days_count": len(days),
         "days": days,
         "n_models": days[0]["n_models"],
+        "horizons": horizons_for(row.horizons, days),
     }
 
 

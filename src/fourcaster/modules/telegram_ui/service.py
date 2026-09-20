@@ -14,7 +14,7 @@ from sqlalchemy.engine import Engine
 
 from fourcaster.modules.consensus.calculator import DayConsensus
 from fourcaster.modules.downscaling import DayProfile
-from fourcaster.modules.reliability import Reliability, ReliabilityComponents
+from fourcaster.modules.reliability import HorizonReliability, ReliabilityComponents
 from fourcaster.shared_kernel.variables import PrecipPhase
 from fourcaster.modules.locations import CATALOG, get_location, published
 from fourcaster.modules.telegram_ui.renderers import render_forecast_card
@@ -53,30 +53,33 @@ def render_cached_card(engine: Engine, location) -> str | None:
     ]
     return render_forecast_card(
         location, days,
-        reliability=[_reliability_from_json(d) for d in data["days"]
-                     if d.get("reliability")],
+        horizons=[_horizon_from_json(h) for h in data.get("horizons") or ()],
         profiles=[_profile_from_json(d) for d in data["days"]],
         computed_at=datetime.fromisoformat(data["computed_at"]),
     )
 
 
-def _reliability_from_json(day: dict) -> Reliability:
-    """Восстановление посчитанной надёжности из карточки — без пересчёта (MB-5)."""
-    r = day["reliability"]
-    return Reliability(
-        day=date.fromisoformat(day["day"]),
-        score=r["score"],
-        level=r["level"],
+def _horizon_from_json(h: dict) -> HorizonReliability:
+    """Восстановление надёжности горизонта из карточки — без пересчёта (MB-5)."""
+    return HorizonReliability(
+        days=h["days"],
+        start=date.fromisoformat(h["start"]),
+        end=date.fromisoformat(h["end"]),
+        score=h["score"],
+        level=h["level"],
         components=ReliabilityComponents(
-            agreement=r["agreement"],
-            ensemble=r["ensemble"],
-            stability=r.get("stability"),
-            ensemble_is_proxy=r.get("ensemble_is_proxy", True),
-            n_models=day["n_models"],
-            n_members=r.get("n_members", day["n_models"]),
-            n_history_runs=r.get("n_history_runs", 0),
+            agreement=h["agreement"],
+            ensemble=h["ensemble"],
+            stability=h.get("stability"),
+            ensemble_is_proxy=h.get("ensemble_is_proxy", True),
+            n_models=h.get("n_models", 0),
+            n_members=h.get("n_members", 0),
+            n_history_runs=h.get("n_history_runs", 0),
+            history=h.get("history", 1.0),
+            history_is_prior=h.get("history_is_prior", True),
         ),
-        is_calibrated=r.get("is_calibrated", False),
+        worst_day=date.fromisoformat(h["worst_day"]) if h.get("worst_day") else None,
+        is_calibrated=h.get("is_calibrated", False),
     )
 
 
@@ -140,9 +143,10 @@ HELP_TEXT = (
     "а в скобках — от минимума (4) до максимума (31) по моделям. "
     "Шире скобки — меньше определённости.\n"
     "• <b>▓▓▓▓░ 88%</b> — вероятность осадков.\n\n"
-    "<b>📊 Надёжность 1д/3д/7д/14д</b> — насколько можно верить прогнозу на разном "
-    "горизонте: 🟢 надёжно · 🟡 ориентировочно · 🟠 низкая · 🔴 не опираться. "
-    "Чем дальше день — тем ниже.\n\n"
+    "<b>📊 Надёжность: сутки / 3 дня / 7 дней / 14 дней</b> — насколько можно верить "
+    "прогнозу на весь этот период <b>целиком</b>, а не на какой-то один день внутри "
+    "него: 🟢 надёжно · 🟡 осторожно · 🟠 низкая · 🔴 не опираться. Чем длиннее "
+    "период, тем ниже оценка: в неё входят и дальние сутки.\n\n"
     "<i>Главное правило продукта: честность о неопределённости. Мы показываем не "
     "«красивую иконку», а насколько ей можно верить.</i>"
 )

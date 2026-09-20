@@ -23,7 +23,11 @@ from fourcaster.modules.consensus.calculator import build_pools, consensus_from_
 from fourcaster.modules.consensus.models import ENSEMBLES, MODELS
 from fourcaster.modules.downscaling import build_profile
 from fourcaster.modules.forecasting.normalize import normalize, normalize_ensemble
-from fourcaster.modules.reliability import compute_reliability, sigma_clim
+from fourcaster.modules.reliability import (
+    aggregate_by_horizon,
+    compute_reliability,
+    sigma_clim,
+)
 from fourcaster.modules.ingestion.infrastructure.openmeteo.client import (
     OpenMeteoProvider,
     parse_daily_payload,
@@ -81,7 +85,8 @@ class LocationRun:
 
     location: Location
     consensus: list
-    reliability: list
+    reliability: list       # Reliability: посуточно, промежуточный результат
+    horizons: list          # HorizonReliability: 1/3/7/14 суток (§10.6.3)
     profiles: list          # DayProfile: изотерма и фаза осадков (§10.3)
     card: str
     computed_at: datetime
@@ -161,12 +166,18 @@ def compute_location(
             hil_history=past.get("hil"),
         ))
 
+    # Наружу идёт надёжность на горизонт, а не на отдельные сутки (§10.6.3):
+    # решение принимается на длину выхода, и посуточная оценка — сырьё для неё.
+    horizons = aggregate_by_horizon(reliability)
+
     computed_at = datetime.utcnow()
     text = render_forecast_card(
-        location, consensus, reliability=reliability, profiles=profiles,
+        location, consensus, horizons=horizons, profiles=profiles,
         n_models_total=len(MODELS), computed_at=computed_at,
     )
-    return LocationRun(location, consensus, reliability, profiles, text, computed_at)
+    return LocationRun(
+        location, consensus, reliability, horizons, profiles, text, computed_at
+    )
 
 
 def build_card(location_id: str, *, days: int, offline: bool) -> str:
@@ -246,7 +257,8 @@ def main(argv: list[str] | None = None) -> int:
                 previous = get_previous_snapshot(engine, location.id)
                 upsert_card(engine, location_id=location.id, computed_at=computed_at,
                             days=consensus, rendered_text=card,
-                            reliability=run.reliability, profiles=run.profiles)
+                            reliability=run.reliability, horizons=run.horizons,
+                            profiles=run.profiles)
                 insert_history(engine, location_id=location.id, issued_at=computed_at,
                                days=consensus)
                 print(f"→ сохранено в БД: {location.id}", file=sys.stderr)

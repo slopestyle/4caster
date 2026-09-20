@@ -71,3 +71,42 @@ def test_upcoming_on_fully_stale_card_is_empty():
     from fourcaster.platform.read_model import upcoming
 
     assert upcoming([{"day": "2026-07-01"}], today=date(2026, 7, 26)) == []
+
+
+# ── горизонты надёжности в проекции карточки (§10.6.3) ─────────────────────
+
+def _day_json(iso: str, score: int) -> dict:
+    return {
+        "day": iso, "p50": 1.0, "n_models": 5,
+        "reliability": {"score": score, "level": 1, "agreement": 0.7,
+                        "ensemble": 0.6, "stability": None, "history": 0.8,
+                        "ensemble_is_proxy": False, "n_members": 60,
+                        "n_history_runs": 0},
+    }
+
+
+def test_stored_horizons_are_served_as_is_for_a_fresh_card():
+    from fourcaster.platform.read_model import horizons_for
+
+    days = [_day_json("2026-07-26", 70), _day_json("2026-07-27", 60)]
+    stored = [{"days": 2, "start": "2026-07-26", "end": "2026-07-27", "level": 1}]
+    assert horizons_for(stored, days) is stored
+
+
+def test_horizons_are_rebuilt_when_the_card_lost_its_first_day():
+    """Горизонт считается от первых суток карточки: после отсечения вчерашнего
+    дня «ближайшие 3 дня» из записи означали бы вчера-сегодня-завтра."""
+    from fourcaster.platform.read_model import horizons_for
+
+    days = [_day_json("2026-07-27", 60), _day_json("2026-07-28", 50)]
+    stored = [{"days": 3, "start": "2026-07-26", "end": "2026-07-28", "level": 1}]
+    rebuilt = horizons_for(stored, days)
+    assert [h["days"] for h in rebuilt] == [1, 2]
+    assert all(h["start"] == "2026-07-27" for h in rebuilt)
+
+
+def test_horizons_are_built_for_cards_written_before_the_column_existed():
+    from fourcaster.platform.read_model import horizons_for
+
+    days = [_day_json("2026-07-27", 60), _day_json("2026-07-28", 50)]
+    assert [h["days"] for h in horizons_for(None, days)] == [1, 2]

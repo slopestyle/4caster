@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
@@ -12,10 +12,14 @@ from fourcaster.modules.reliability.climatology import FALLBACK_SIGMA_MM, sigma_
 from fourcaster.modules.reliability.score import (
     FLOOR,
     LEVELS,
+    Reliability,
+    ReliabilityComponents,
     agreement,
+    aggregate_by_horizon,
     compute_reliability,
     ensemble_spread,
     flip_flop_index,
+    historical_skill,
     stability,
 )
 
@@ -134,6 +138,30 @@ def test_category_flipping_every_run_bottoms_out_stability():
     assert stability([1.0, 6.0, 1.0, 6.0], [1, 3, 1, 3], lead_days=10) == FLOOR
 
 
+# ── H: априорный скилл по горизонту (§10.6.5) ──────────────────────────────
+
+def test_historical_skill_decays_with_lead():
+    """Единственная компонента, которая знает про удаление дня как таковое."""
+    leads = [0, 1, 2, 3, 5, 7, 10, 14]
+    values = [historical_skill(n) for n in leads]
+    assert values == sorted(values, reverse=True)
+    assert values[0] > 0.8            # завтра прогнозы осадков в целом сбываются
+    assert values[-1] <= 0.1          # на две недели — почти климатология
+
+
+def test_historical_skill_stays_inside_bounds():
+    assert historical_skill(999) >= FLOOR
+    assert historical_skill(0) <= 1.0
+
+
+def test_far_day_is_less_reliable_even_when_models_agree():
+    """Дружное «сухо» на десятый день не делает его надёжнее завтрашнего."""
+    pool = _pool([5.0] * 5, [5.0] * 12)
+    near = compute_reliability(pool, sigma_clim_mm=8.0, lead_days=1)
+    far = compute_reliability(pool, sigma_clim_mm=8.0, lead_days=10)
+    assert far.score < near.score
+
+
 # ── Свёртка ────────────────────────────────────────────────────────────────
 
 def test_reliability_uses_ensemble_proxy_when_no_members():
@@ -172,3 +200,79 @@ def test_agreement_and_spread_move_the_verdict():
                               sigma_clim_mm=8.0, lead_days=1)
     assert good.level < bad.level
     assert good.score > bad.score
+
+
+# ── Агрегация по горизонтам (§10.6.3) ──────────────────────────────────────
+
+def _daily(scores: list[int]) -> list[Reliability]:
+    """Посуточные оценки с заданными скорами, начиная с DAY."""
+    return [
+        Reliability(
+            day=DAY + timedelta(days=i),
+            score=s,
+            level=0,
+            components=ReliabilityComponents(
+                agreement=s / 100, ensemble=s / 100, stability=s / 100,
+                ensemble_is_proxy=False, n_models=5, n_members=55,
+                n_history_runs=4,
+            ),
+        )
+        for i, s in enumerate(scores)
+    ]
+
+
+def test_one_day_horizon_equals_the_first_day():
+    daily = _daily([88, 70, 40, 20, 15, 12, 10])
+    first = next(h for h in aggregate_by_horizon(daily) if h.days == 1)
+    assert first.score == daily[0].score
+    assert first.start == first.end == DAY
+
+
+def test_horizon_degrades_with_length():
+    """Чем длиннее период, тем ниже оценка: в неё входят дальние сутки."""
+    horizons = aggregate_by_horizon(_daily([90, 85, 75, 55, 40, 30, 25]))
+    scores = [h.score for h in horizons]
+    assert scores == sorted(scores, reverse=True)
+    assert len({h.days for h in horizons}) == len(horizons)
+
+
+def test_far_bad_days_drag_the_whole_period_down():
+    """Свёртка геометрическая: пара непредсказуемых дней топит неделю."""
+    steady = aggregate_by_horizon(_daily([80] * 7))
+    broken = aggregate_by_horizon(_daily([80, 80, 80, 80, 80, 8, 8]))
+    week = lambda hs: next(h for h in hs if h.days == 7)   # noqa: E731
+    assert week(broken).score < week(steady).score
+    assert week(broken).worst_day > week(broken).start
+
+
+def test_horizon_is_trimmed_to_available_days():
+    """Прогноз короче запрошенного горизонта — горизонт урезается, а не врёт."""
+    horizons = aggregate_by_horizon(_daily([70] * 4))
+    assert [h.days for h in horizons] == [1, 3, 4]
+    assert all(h.end <= DAY + timedelta(days=3) for h in horizons)
+
+
+def test_horizon_components_report_the_weakest_link():
+    daily = _daily([80, 80, 80])
+    weak = daily[-1]
+    daily[-1] = Reliability(
+        day=weak.day, score=weak.score, level=weak.level,
+        components=ReliabilityComponents(
+            agreement=0.8, ensemble=0.8, stability=None,
+            ensemble_is_proxy=True, n_models=3, n_members=3, n_history_runs=0,
+        ),
+    )
+    three = next(h for h in aggregate_by_horizon(daily) if h.days == 3)
+    assert three.components.n_models == 3          # «к концу — три модели из пяти»
+    assert three.components.ensemble_is_proxy      # ансамбли были не на все дни
+    assert three.components.stability is not None  # история есть хотя бы где-то
+
+
+def test_horizon_score_is_never_presented_as_calibrated():
+    three = next(h for h in aggregate_by_horizon(_daily([70] * 5)) if h.days == 3)
+    assert three.is_calibrated is False
+    assert three.label in LEVELS
+
+
+def test_empty_daily_gives_no_horizons():
+    assert aggregate_by_horizon([]) == []

@@ -27,6 +27,9 @@ class ForecastCardCache(Base):
     rendered_text: Mapped[str] = mapped_column(Text)
     # список посуточных значений консенсуса (p10/p50/p90/pop/hil)
     consensus: Mapped[list] = mapped_column(JSONB)
+    # надёжность по горизонтам 1/3/7/14 суток (§10.6.3) — то, что показывается
+    # пользователю; nullable, потому что карточки старых прогонов её не имеют
+    horizons: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
